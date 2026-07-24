@@ -53,7 +53,7 @@ def _suppressed_paddleocr(lang, engine):
         os.dup2(devnull_fd, 2)
         os.close(devnull_fd)
         from paddleocr import PaddleOCR
-        return PaddleOCR(lang=lang, engine=engine, show_log=False)
+        return PaddleOCR(lang=lang, engine=engine)
     finally:
         os.dup2(old_stderr, 2)
         os.close(old_stderr)
