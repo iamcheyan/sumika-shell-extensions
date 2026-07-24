@@ -1,0 +1,414 @@
+#!/usr/bin/env python3
+"""
+OMD OCR Setup TUI — multi-language OCR installer and configurator.
+
+Installs paddleocr + onnxruntime, downloads selected language models,
+and writes the configuration to sumika.json.
+
+Controls
+  j / Down      Move selection down
+  k / Up        Move selection up
+  Space         Toggle language selection
+  i             Install selected languages + save config
+  s             Save config only
+  q / Esc       Quit
+"""
+
+import curses
+import json
+import locale
+import os
+import subprocess
+import sys
+import threading
+import time
+
+
+LANGUAGES = [
+    ("ch",    "\u7b80\u4f53\u4e2d\u6587",   "Chinese (Simplified)"),
+    ("en",    "English",    "English"),
+    ("japan", "\u65e5\u672c\u8a9e",         "Japanese"),
+    ("korean","\ud55c\uad6d\uc5b4",          "Korean"),
+    ("fr",    "Fran\u00e7ais",              "French"),
+    ("de",    "Deutsch",    "German"),
+    ("es",    "Espa\u00f1ol",              "Spanish"),
+    ("pt",    "Portugu\u00eas",             "Portuguese"),
+    ("it",    "Italiano",   "Italian"),
+    ("ru",    "\u0420\u0443\u0441\u0441\u043a\u0438\u0439", "Russian"),
+    ("ar",    "\u0627\u0644\u0639\u0631\u0628\u064a\u0629", "Arabic"),
+]
+PADDLEOCR_CODES = {c for c, _, _ in LANGUAGES}
+
+
+def _config_home():
+    return os.environ.get("SUMIKA_SHELL_CONFIG_HOME") or os.path.join(
+        os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")),
+        "sumika-shell",
+    )
+
+
+def _sumika_json_path():
+    return os.path.join(_config_home(), "sumika.json")
+
+
+def read_config():
+    path = _sumika_json_path()
+    if not os.path.isfile(path):
+        return {"ocr": {}}
+    try:
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        if "ocr" not in data:
+            data["ocr"] = {}
+        return data
+    except (json.JSONDecodeError, OSError):
+        return {"ocr": {}}
+
+
+def write_config(data):
+    path = _sumika_json_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+            f.write("\n")
+        return True
+    except OSError as e:
+        return str(e)
+
+
+def check_paddleocr():
+    try:
+        import paddleocr  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+TRUNCATE = {}
+
+def run_pip_install(log):
+    log.append("Installing paddleocr + onnxruntime ...")
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "pip", "install", "--quiet", "paddleocr", "onnxruntime"],
+            stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+            text=True, bufsize=1,
+        )
+        for line in iter(proc.stdout.readline, ""):
+            line = line.rstrip()
+            if line:
+                log.append(line)
+        proc.wait()
+        if proc.returncode == 0:
+            log.append("pip install complete.")
+        else:
+            log.append(f"pip install FAILED (exit {proc.returncode}).")
+        return proc.returncode == 0
+    except Exception as e:
+        log.append(f"pip install error: {e}")
+        return False
+
+
+def download_model(lang_code, log):
+    log.append(f"  Downloading {lang_code} model ...")
+    try:
+        os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "1"
+        os.environ["GLOG_minloglevel"] = "2"
+        from paddleocr import PaddleOCR
+        ocr = PaddleOCR(lang=lang_code, engine="onnxruntime")
+        del ocr
+        log.append(f"  {lang_code} model ready.")
+        return True
+    except Exception as e:
+        log.append(f"  {lang_code} model FAILED: {e}")
+        return False
+
+
+def _trunc(s, w):
+    key = (s, w)
+    if key not in TRUNCATE:
+        TRUNCATE[key] = s if len(s) <= w else s[: w - 1] + "\u2026"
+    return TRUNCATE[key]
+
+
+def main(stdscr):
+    curses.curs_set(0)
+    curses.use_default_colors()
+    try:
+        curses.init_pair(1, curses.COLOR_CYAN, -1)
+        curses.init_pair(2, curses.COLOR_GREEN, -1)
+        curses.init_pair(3, curses.COLOR_RED, -1)
+        curses.init_pair(4, curses.COLOR_YELLOW, -1)
+        curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_BLUE)
+        curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_WHITE)
+        curses.init_pair(7, curses.COLOR_WHITE, -1)
+    except curses.error:
+        pass
+
+    A_ACCENT = curses.color_pair(1) | curses.A_BOLD
+    A_OK = curses.color_pair(2) | curses.A_BOLD
+    A_DANGER = curses.color_pair(3) | curses.A_BOLD
+    A_SECTION = curses.color_pair(4) | curses.A_BOLD
+    A_FOCUS = curses.color_pair(5)
+    A_BTN = curses.color_pair(6) | curses.A_BOLD
+    A_MUTED = curses.color_pair(7)
+    A_CHECK_ON = A_OK
+    A_CHECK_OFF = curses.A_DIM
+
+    config = read_config()
+    ocr_cfg = config.get("ocr", {})
+    installed = ocr_cfg.get("languages", [])
+    default_lang = ocr_cfg.get("lang", "ch")
+
+    selected = {c for c in installed if c in PADDLEOCR_CODES}
+    if not selected:
+        selected = {"ch"}
+    if default_lang in PADDLEOCR_CODES:
+        selected.add(default_lang)
+
+    have_ocr = check_paddleocr()
+    cursor = 0
+    busy = False
+    busy_log = []
+    status_msg = ""
+    done_event = threading.Event()
+
+    while True:
+        max_y, max_x = stdscr.getmaxyx()
+        box_w = min(76, max_x - 4)
+        box_h = min(max_y - 2, 32)
+        box_x = (max_x - box_w) // 2
+        box_y = (max_y - box_h) // 2
+        inner_w = box_w - 4
+        content_h = box_h - 2
+
+        stdscr.clear()
+
+        # Outer frame
+        try:
+            stdscr.addstr(box_y, box_x, "\u256d" + "\u2500" * (box_w - 2) + "\u256e", curses.A_BOLD)
+            title = " OCR Setup "
+            tx = box_x + (box_w - len(title)) // 2
+            stdscr.addstr(box_y, tx, title, A_SECTION)
+        except curses.error:
+            pass
+        for i in range(1, box_h - 1):
+            try:
+                stdscr.addstr(box_y + i, box_x, "\u2502")
+                stdscr.addstr(box_y + i, box_x + box_w - 1, "\u2502")
+            except curses.error:
+                pass
+        try:
+            stdscr.addstr(box_y + box_h - 1, box_x,
+                          "\u2570" + "\u2500" * (box_w - 2) + "\u256f", curses.A_BOLD)
+        except curses.error:
+            pass
+
+        row = box_y + 1
+        avail = box_h - 4  # lines for content
+
+        # Status line
+        if have_ocr:
+            try:
+                stdscr.addstr(row, box_x + 2, "  PaddleOCR: ", A_MUTED)
+                stdscr.addstr("Installed", A_OK)
+            except curses.error:
+                pass
+        else:
+            try:
+                stdscr.addstr(row, box_x + 2, "  PaddleOCR: ", A_MUTED)
+                stdscr.addstr("Not installed", A_DANGER)
+            except curses.error:
+                pass
+        row += 1
+
+        # Header
+        if row < box_y + box_h - 3:
+            try:
+                stdscr.addstr(row, box_x + 2, "  Select languages to install:", A_SECTION)
+            except curses.error:
+                pass
+            row += 1
+
+        # Scroll
+        n = len(LANGUAGES)
+        max_vis = avail - 1 if row - box_y + n > avail else n
+        scroll = max(0, min(cursor - max_vis + 1, n - max_vis))
+
+        # Language rows
+        for i in range(scroll, min(scroll + max_vis, n)):
+            code, native, eng = LANGUAGES[i]
+            checked = code in selected
+            is_def = code == default_lang
+            suffix = "  \u2190 default" if is_def else ""
+
+            if row >= box_y + box_h - 3:
+                break
+
+            if i == cursor and not busy:
+                try:
+                    stdscr.addstr(row, box_x + 1, " ", A_FOCUS)
+                    stdscr.addstr(row, box_x + 2, " " * (inner_w - 1), A_FOCUS)
+                    chk = "[\u2713]" if checked else "[ ]"
+                    stdscr.addstr(row, box_x + 2, "  " + chk,
+                                  A_FOCUS | (A_CHECK_ON if checked else curses.A_BOLD))
+                    stdscr.addstr(f" {native}", A_FOCUS | curses.A_BOLD)
+                    stdscr.addstr(f" ({eng})", A_FOCUS | curses.A_DIM)
+                    if suffix:
+                        stdscr.addstr(suffix, A_FOCUS | curses.color_pair(2))
+                except curses.error:
+                    pass
+            else:
+                try:
+                    chk = "[\u2713]" if checked else "[ ]"
+                    stdscr.addstr(row, box_x + 2, "  " + chk,
+                                  A_CHECK_ON if checked else A_CHECK_OFF)
+                    stdscr.addstr(f" {native}", curses.A_BOLD if checked else A_MUTED)
+                    stdscr.addstr(f" ({eng})", A_MUTED | curses.A_DIM if not checked else A_MUTED)
+                    if suffix:
+                        stdscr.addstr(suffix, curses.color_pair(2))
+                except curses.error:
+                    pass
+            row += 1
+
+        # Bottom area — log or status
+        log_y = box_y + box_h - 3
+        if busy:
+            log_h = box_h - (log_y - box_y) - 2
+            if log_h > 1:
+                visible = busy_log[-(log_h - 1):]
+                for idx, line in enumerate(visible):
+                    ly = log_y + 1 + idx
+                    if ly < box_y + box_h - 1:
+                        try:
+                            stdscr.addstr(ly, box_x + 2, _trunc(line, inner_w), A_MUTED)
+                        except curses.error:
+                            pass
+        elif status_msg:
+            try:
+                ok = "\u2713" in status_msg or "saved" in status_msg
+                stdscr.addstr(log_y + 1, box_x + 2,
+                              _trunc(status_msg, inner_w),
+                              A_OK if ok else A_DANGER)
+            except curses.error:
+                pass
+
+        # Buttons
+        btn_y = box_y + box_h - 2
+        bx = box_x + 2
+        active = len(selected) > 0 and not busy
+        buttons = [
+            ("i", " Install & Download ", active),
+            ("s", " Save Config ", active),
+            ("q", " Quit ", True),
+        ]
+        for key, label, en in buttons:
+            attr = A_BTN if en else A_MUTED
+            try:
+                stdscr.addstr(btn_y, bx, f" [{key}]", A_ACCENT if en else A_MUTED)
+                stdscr.addstr(label, attr)
+            except curses.error:
+                pass
+            bx += len(label) + len(key) + 4 + max(4, (box_w - 50) // 3)
+
+        # Scrollbar
+        if n > max_vis:
+            sb_h = avail - 3
+            if sb_h > 0:
+                thumb_h = max(1, sb_h * sb_h // n)
+                thumb_y = scroll * (sb_h - thumb_h) // max(1, n - max_vis)
+                sb_x = box_x + box_w - 2
+                sb_y2 = box_y + 3
+                for i2 in range(sb_h):
+                    try:
+                        stdscr.addstr(sb_y2 + i2, sb_x,
+                                      "\u2588" if thumb_y <= i2 < thumb_y + thumb_h
+                                      else "\u2591",
+                                      curses.A_DIM)
+                    except curses.error:
+                        pass
+
+        stdscr.refresh()
+
+        # Poll background thread
+        if busy and done_event.is_set():
+            busy = False
+            have_ocr = check_paddleocr()
+            if install_result:
+                status_msg = "\u2713 Installation complete and config saved!"
+            else:
+                status_msg = "\u2713 Installed, but some steps had issues."
+            continue
+
+        # Input
+        key = stdscr.getch()
+        if key in (ord("q"), 27):
+            break
+        elif key == ord("j") or key == curses.KEY_DOWN:
+            if cursor < n - 1:
+                cursor += 1
+        elif key == ord("k") or key == curses.KEY_UP:
+            if cursor > 0:
+                cursor -= 1
+        elif key == ord(" "):
+            code = LANGUAGES[cursor][0]
+            if code in selected:
+                selected.discard(code)
+                if code == default_lang and selected:
+                    default_lang = next(iter(selected))
+            else:
+                selected.add(code)
+                default_lang = code
+        elif key == ord("i") and not busy:
+            if not selected:
+                status_msg = "Select at least one language."
+                continue
+            busy_log.clear()
+            busy = True
+            done_event.clear()
+            status_msg = ""
+            lang_codes = sorted(selected)
+            cfg = {"lang": default_lang, "languages": lang_codes, "engine": "onnxruntime"}
+
+            def _work():
+                log = busy_log
+                ok = run_pip_install(log)
+                if ok:
+                    for code in lang_codes:
+                        if code in PADDLEOCR_CODES:
+                            download_model(code, log)
+                log.append("")
+                log.append("Saving config...")
+                config["ocr"] = cfg
+                r = write_config(config)
+                if r is True:
+                    log.append("Config saved to sumika.json")
+                else:
+                    log.append(f"WARNING: {r}")
+                log.append("Press i to install more or q to quit.")
+                done_event.set()
+
+            install_result = True
+            t = threading.Thread(target=_work, daemon=True)
+            t.start()
+        elif key == ord("s") and not busy:
+            if not selected:
+                status_msg = "Select at least one language."
+                continue
+            ocr_cfg["lang"] = default_lang
+            ocr_cfg["languages"] = sorted(selected)
+            ocr_cfg["engine"] = "onnxruntime"
+            config["ocr"] = ocr_cfg
+            err = write_config(config)
+            if err is True:
+                status_msg = "\u2713 Config saved to sumika.json"
+            else:
+                status_msg = f"\u2717 Config save failed: {err}"
+
+
+if __name__ == "__main__":
+    locale.setlocale(locale.LC_ALL, "")
+    try:
+        curses.wrapper(main)
+    except KeyboardInterrupt:
+        pass

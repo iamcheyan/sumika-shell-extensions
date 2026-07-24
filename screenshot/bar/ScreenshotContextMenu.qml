@@ -239,11 +239,23 @@ PopupWindow {
                         root.close();
                     }
                 }
+
+                Separator {}
+
                 MenuItem {
                     menuIcon: NerdIconMap.textDocument
-                    label: "OCR Screenshot"
+                    label: "OCR Recognize"
                     onClicked: {
                         Quickshell.execDetached(["omd-screenshot", "ocr"]);
+                        root.close();
+                    }
+                }
+
+                MenuItem {
+                    menuIcon: NerdIconMap.settings
+                    label: "OCR Settings"
+                    onClicked: {
+                        Quickshell.execDetached(["omd-launch-ocr-tui"]);
                         root.close();
                     }
                 }
