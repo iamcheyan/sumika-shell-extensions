@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+: "${EDITOR:=vi}"
+bindings_file="$HOME/.config/voice_bindings.txt"
+
+mkdir -p "$(dirname "$bindings_file")"
+if [[ ! -f "$bindings_file" ]]; then
+  cat >"$bindings_file" <<'EOF'
+# OMD Voice Input Keybindings
+# One key combination per line. Format e.g., 'ALT + A' or 'code:472'
+
+EOF
+fi
+
+exec "$EDITOR" "$bindings_file"

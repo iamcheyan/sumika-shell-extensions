@@ -1,0 +1,3 @@
+module qs.modules.voice
+singleton VoiceInput 1.0 VoiceInput.qml
+VoicePage 1.0 settings/VoicePage.qml

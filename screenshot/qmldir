@@ -1,0 +1,3 @@
+module qs.modules.screenshot
+ScreenshotButton 1.0 bar/ScreenshotButton.qml
+ScreenshotContextMenu 1.0 bar/ScreenshotContextMenu.qml

@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "id": "voice",
+  "name": "Voice Input",
+  "version": "1.0.0",
+  "kind": "shared",
+  "actionsProvider": "module-actions.qml",
+  "description": "Voice input and speech-to-text",
+  "contributes": {
+    "services": ["voice-input"],
+    "widgets": [
+      {"id": "voice-bar-button", "name": "Voice", "slot": "right", "component": "bar/InputMethodButton.qml", "order": 55}
+    ],
+    "popupSections": [
+      {"id": "voice-popup", "type": "voice", "name": "Voice Input", "component": "popup/VoicePopup.qml"}
+    ],
+    "settingsPages": [
+      {"id": "voice", "title": "Voice Input", "component": "settings/VoicePage.qml", "icon": "keyboard_voice", "order": 50}
+    ]
+  }
+}
