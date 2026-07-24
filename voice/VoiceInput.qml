@@ -163,7 +163,7 @@ Singleton {
     Process {
         id: daemonCheckProc
         command: ["bash", "-c",
-            `if [ -S /tmp/omd-voice.sock ] && ss -x src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo stopped; fi`]
+            `if [ -S /tmp/omd-voice.sock ] && ss -xl src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo stopped; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 root.daemonRunning = (line === "running")

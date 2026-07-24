@@ -18,16 +18,20 @@ Controls
 
 import curses
 import json
-import locale
 import os
 import subprocess
 import sys
 import threading
-import time
 
-TRUNCATE: dict = {}
+# ── Framework setup ─────────────────────────────────────────────────────
+_omd_bin = os.path.join(
+    os.environ.get("OMD_ROOT") or os.environ.get("SUMIKA_SHELL_ROOT")
+    or os.path.expanduser("~/.config/omd"), "bin")
+if _omd_bin not in sys.path:
+    sys.path.insert(0, _omd_bin)
+import omd_tui_framework as S
 
-
+# ── Constants ───────────────────────────────────────────────────────────
 LANGUAGES = [
     ("ch",    "简体中文",   "Chinese (Simplified)"),
     ("en",    "English",    "English"),
@@ -107,12 +111,12 @@ def run_pip_install(log, force=False):
                 log.append(line)
         proc.wait()
         if proc.returncode == 0:
-            log.append(f"{'Reinstall' if force else 'Install'} complete.")
+            log.append(("ok", f"{'Reinstall' if force else 'Install'} complete."))
         else:
-            log.append(f"pip install FAILED (exit {proc.returncode}).")
+            log.append(("danger", f"pip install FAILED (exit {proc.returncode})."))
         return proc.returncode == 0
     except Exception as e:
-        log.append(f"pip install error: {e}")
+        log.append(("danger", f"pip install error: {e}"))
         return False
 
 
@@ -138,272 +142,306 @@ def download_model(lang_code, log):
                 log.append(f"  {line}")
         proc.wait()
         if proc.returncode == 0:
-            log.append(f"✓ {lang_code} model ready.")
+            log.append(("ok", f"✓ {lang_code} model ready."))
             return True
         else:
-            log.append(f"✗ {lang_code} model FAILED (exit {proc.returncode}).")
+            log.append(("danger", f"✗ {lang_code} model FAILED (exit {proc.returncode})."))
             return False
     except Exception as e:
-        log.append(f"✗ {lang_code} model error: {e}")
+        log.append(("danger", f"✗ {lang_code} model error: {e}"))
         return False
 
 
-def _trunc(s, w):
-    key = (s, w)
-    if key not in TRUNCATE:
-        TRUNCATE[key] = s if len(s) <= w else s[: max(1, w - 1)] + "…"
-    return TRUNCATE[key]
+# ── TUI ─────────────────────────────────────────────────────────────────
+class OcrSetupTUI:
+    MIN_H = 14
+    MIN_W = 44
 
+    def __init__(self, stdscr: curses.window):
+        self.stdscr = stdscr
+        self.config = read_config()
+        ocr_cfg = self.config.get("ocr", {})
+        self.installed = ocr_cfg.get("languages", [])
+        self.default_lang = ocr_cfg.get("lang", "ch")
+        self.selected = {c for c in self.installed if c in PADDLEOCR_CODES}
+        if not self.selected:
+            self.selected = {"ch"}
+        if self.default_lang in PADDLEOCR_CODES:
+            self.selected.add(self.default_lang)
+        self.have_ocr = check_paddleocr()
+        self.cursor = 0
+        self.busy = False
+        self.busy_log: list = []
+        self.status_msg = ""
+        self.status_tone = "ok"
+        self._quit = False
+        self._done_event = threading.Event()
+        self._install_ok = [False]
 
-def _safe_add(y, x, text, *attr):
-    try:
-        if attr:
-            _safe_add._stdscr.addstr(y, x, text, *attr)
+    # ── lifecycle ──
+
+    def run(self):
+        self._init_curses()
+        while not self._quit:
+            self._draw()
+            self._handle_input()
+
+    def _init_curses(self):
+        S.setup_locale()
+        try:
+            curses.curs_set(0)
+        except curses.error:
+            pass
+        curses.noecho()
+        curses.cbreak()
+        self.stdscr.keypad(True)
+        S.init_colors()
+        self.stdscr.timeout(150)
+
+    # ── hero ──
+
+    def _hero_info(self):
+        title = "OCR Setup & Model Downloader"
+        subtitle_parts = []
+        subtitle_parts.append(
+            "Installed" if self.have_ocr else "Not installed")
+        subtitle_parts.append(f"Default: {self.default_lang}")
+        extra = ""
+        if self.busy:
+            extra = "working..."
+        elif self.status_msg:
+            extra = self.status_msg
+        if extra:
+            subtitle_parts.append(extra)
+        subtitle = " · ".join(subtitle_parts)
+        status_text = ""
+        tone = "muted"
+        if self.busy:
+            status_text = "Working..."
+            tone = "warn"
+        elif self.have_ocr:
+            status_text = "Engine ready"
+            tone = "ok"
         else:
-            _safe_add._stdscr.addstr(y, x, text)
-    except curses.error:
-        pass
+            status_text = "Not installed"
+            tone = "muted"
+        msg = ""
+        if self.busy:
+            msg = "working..."
+        elif self.status_msg:
+            msg = self.status_msg
+            tone = self.status_tone
+        return S.hero_line(title, subtitle, tone, self.busy, msg, status_text)
 
+    # ── background work ──
 
-def main(stdscr):
-    curses.curs_set(0)
-    _safe_add._stdscr = stdscr
-    stdscr.timeout(100)  # Non-blocking input polling every 100ms
-    curses.use_default_colors()
-    try:
-        curses.init_pair(1, curses.COLOR_CYAN, -1)
-        curses.init_pair(2, curses.COLOR_GREEN, -1)
-        curses.init_pair(3, curses.COLOR_RED, -1)
-        curses.init_pair(4, curses.COLOR_YELLOW, -1)
-        curses.init_pair(5, curses.COLOR_WHITE, curses.COLOR_BLUE)
-        curses.init_pair(6, curses.COLOR_BLACK, curses.COLOR_WHITE)
-        curses.init_pair(7, curses.COLOR_WHITE, -1)
-    except curses.error:
-        pass
-
-    A_ACCENT = curses.color_pair(1) | curses.A_BOLD
-    A_OK = curses.color_pair(2) | curses.A_BOLD
-    A_DANGER = curses.color_pair(3) | curses.A_BOLD
-    A_SECTION = curses.color_pair(4) | curses.A_BOLD
-    A_FOCUS = curses.color_pair(5)
-    A_BTN = curses.color_pair(6) | curses.A_BOLD
-    A_MUTED = curses.color_pair(7)
-    A_CHECK_ON = A_OK
-    A_CHECK_OFF = curses.A_DIM
-
-    config = read_config()
-    ocr_cfg = config.get("ocr", {})
-    installed = ocr_cfg.get("languages", [])
-    default_lang = ocr_cfg.get("lang", "ch")
-
-    selected = {c for c in installed if c in PADDLEOCR_CODES}
-    if not selected:
-        selected = {"ch"}
-    if default_lang in PADDLEOCR_CODES:
-        selected.add(default_lang)
-
-    have_ocr = check_paddleocr()
-    cursor = 0
-    busy = False
-    busy_log = []
-    status_msg = ""
-    done_event = threading.Event()
-    install_ok = [False]
-
-    def _start_work(force=False):
-        nonlocal busy, busy_log, status_msg, have_ocr
-        busy_log.clear()
-        busy = True
-        done_event.clear()
-        status_msg = ""
-        lang_codes = sorted(selected)
-        cfg = {"lang": default_lang, "languages": lang_codes, "engine": "onnxruntime"}
+    def _start_work(self, force=False):
+        self.busy_log.clear()
+        self.busy = True
+        self.status_msg = ""
+        self._done_event.clear()
+        lang_codes = sorted(self.selected)
+        cfg = {"lang": self.default_lang, "languages": lang_codes, "engine": "onnxruntime"}
 
         def _work():
-            log = busy_log
-            install_ok[0] = True
+            log = self.busy_log
+            self._install_ok[0] = True
             if force or not check_paddleocr():
                 ok = run_pip_install(log, force=force)
             else:
                 log.append("paddleocr package is already installed.")
                 ok = True
-
             if ok:
                 for code in lang_codes:
                     if code in PADDLEOCR_CODES:
                         if not download_model(code, log):
-                            install_ok[0] = False
+                            self._install_ok[0] = False
             log.append("")
             log.append("Saving config...")
-            config["ocr"] = cfg
-            r = write_config(config)
+            self.config["ocr"] = cfg
+            r = write_config(self.config)
             if r is True:
-                log.append("Config saved to sumika.json")
+                log.append(("ok", "Config saved to sumika.json"))
             else:
-                log.append(f"WARNING: {r}")
+                log.append(("danger", f"WARNING: {r}"))
+            self._done_event.set()
 
         t = threading.Thread(target=_work, daemon=True)
         t.start()
 
-    n = len(LANGUAGES)
+    # ── draw ──
 
-    while True:
-        key = stdscr.getch()
+    def _draw(self):
+        h, w = self.stdscr.getmaxyx()
+        self.stdscr.erase()
 
-        # Poll background thread completion / idle redraw during install
-        if key == -1:
-            if busy and done_event.is_set():
-                busy = False
-                have_ocr = check_paddleocr()
-                if install_ok[0]:
-                    status_msg = "✓ Installation & model downloads complete!"
-                else:
-                    status_msg = "✗ Download process encountered issues."
-                redraw = True
-            elif busy:
-                redraw = True
-            continue
+        if h < self.MIN_H or w < self.MIN_W:
+            try:
+                self.stdscr.addnstr(0, 0, f"Terminal too small (min {self.MIN_W}x{self.MIN_H})", w)
+            except curses.error:
+                pass
+            self.stdscr.refresh()
+            return
 
-        # Process input
-        if key in (ord("q"), ord("Q"), 27):
-            break
-        elif key in (ord("j"), ord("J"), curses.KEY_DOWN):
-            if cursor < n - 1:
-                cursor += 1
-        elif key in (ord("k"), ord("K"), curses.KEY_UP):
-            if cursor > 0:
-                cursor -= 1
-        elif key == ord(" "):
-            code = LANGUAGES[cursor][0]
-            if code in selected:
-                selected.discard(code)
-                if code == default_lang and selected:
-                    default_lang = next(iter(selected))
+        # Check background completion
+        if self.busy and self._done_event.is_set():
+            self.busy = False
+            self.have_ocr = check_paddleocr()
+            if self._install_ok[0]:
+                self.status_msg = "Installation & model downloads complete!"
+                self.status_tone = "ok"
             else:
-                selected.add(code)
-                default_lang = code
-        elif key in (ord("d"), ord("D"), 10, 13):
-            code = LANGUAGES[cursor][0]
-            selected.add(code)
-            default_lang = code
-            status_msg = f"Set '{code}' as default language."
-        elif key in (ord("i"), ord("I")) and not busy:
-            if not selected:
-                status_msg = "Select at least one language."
-                redraw = True
-                continue
-            _start_work(force=False)
-        elif key in (ord("r"), ord("R")) and not busy:
-            if not selected:
-                status_msg = "Select at least one language."
-                redraw = True
-                continue
-            _start_work(force=True)
-        elif key in (ord("s"), ord("S")) and not busy:
-            if not selected:
-                status_msg = "Select at least one language."
-                redraw = True
-                continue
-            ocr_cfg["lang"] = default_lang
-            ocr_cfg["languages"] = sorted(selected)
-            ocr_cfg["engine"] = "onnxruntime"
-            config["ocr"] = ocr_cfg
-            err = write_config(config)
-            if err is True:
-                status_msg = f"✓ Config saved (Default: {default_lang}, Selected: {sorted(selected)})"
-            else:
-                status_msg = f"✗ Config save failed: {err}"
+                self.status_msg = "Download process encountered issues."
+                self.status_tone = "danger"
 
-        redraw = True
+        margin = 1
+        hero_h = 2
 
-        # ── Re-render after state change ──
-        max_y, max_x = stdscr.getmaxyx()
-        if max_y < 10 or max_x < 40:
-            stdscr.clear()
-            _safe_add(0, 0, "Terminal too small!")
-            stdscr.refresh()
-            continue
+        # Layout
+        n_langs = len(LANGUAGES)
+        log_h = 6 if (self.busy or self.status_msg) else 0
+        help_h = 2
+        list_h = max(4, h - hero_h - log_h - help_h - margin * 2)
 
-        stdscr.clear()
+        # ── Hero ──
+        S.draw_hero(self.stdscr, self._hero_info())
 
-        # Header Title Bar
-        header_str = " OCR Setup & Model Downloader "
-        status_str = f"Engine: {'Installed' if have_ocr else 'Not Installed'}  |  Default: {default_lang} "
-        _safe_add(0, 0, header_str, A_SECTION)
-        if len(header_str) + len(status_str) < max_x:
-            _safe_add(0, max_x - len(status_str) - 1, status_str, A_ACCENT)
-        _safe_add(1, 0, "─" * max_x, curses.A_DIM)
+        # ── Language list panel ──
+        y = margin + hero_h - 1
+        box_w = w - margin * 2
+        S.draw_focus_border(self.stdscr, True, y, margin, list_h, box_w, "Languages")
+        self._draw_lang_list(y + 1, margin + 1, list_h - 2, box_w - 2)
+        y += list_h
 
-        row = 2
-        _safe_add(row, 1, "Select Languages (Space: toggle | d/Enter: set default):", A_MUTED)
-        row += 1
+        # ── Log / status panel ──
+        if log_h > 0:
+            log_y = y
+            if self.busy:
+                S.draw_border(self.stdscr, log_y, margin, log_h, box_w, "Activity")
+                S.draw_log_in_area(self.stdscr, log_y, margin, log_h, box_w,
+                                   self.busy_log, empty_text="Starting...")
+            elif self.status_msg:
+                S.draw_border(self.stdscr, log_y, margin, log_h, box_w, "Status")
+                ok = self.status_tone == "ok"
+                attr = S.ATTR_OK if ok else S.ATTR_DANGER
+                S.safe_addstr(
+                    self.stdscr, log_y + 1, margin + 2,
+                    S.truncate(self.status_msg, box_w - 4),
+                    attr)
+            y += log_h
 
-        footer_h = 2
-        log_h = 5 if busy or status_msg else 0
-        lang_list_h = max(3, max_y - row - log_h - footer_h - 1)
+        # ── Help bar ──
+        if not self.busy:
+            gen = [("arrows", "navigate"), ("q", "quit")]
+            tool = [
+                ("space", "toggle"), ("d", "default"),
+                ("i", "install"), ("r", "reinstall"),
+                ("s", "save"),
+            ]
+        else:
+            gen = [("q", "cancel")]
+            tool = [("wait..", "installing")]
+        S.draw_help_bar(self.stdscr, gen, tool)
+
+        S.finish_frame(self.stdscr)
+
+    def _draw_lang_list(self, y, x, h, w):
         n = len(LANGUAGES)
-        max_vis = min(n, lang_list_h)
-        scroll = max(0, min(cursor - max_vis + 1, n - max_vis))
+        max_vis = min(n, h)
+        scroll = max(0, min(self.cursor - max_vis + 1, n - max_vis))
 
         for i in range(scroll, min(scroll + max_vis, n)):
             code, native, eng = LANGUAGES[i]
-            checked = code in selected
-            is_def = code == default_lang
-            suffix = "  ← default" if is_def else ""
-            if row >= max_y - log_h - footer_h - 1:
-                break
-            line_text = f"  [{'✓' if checked else ' '}] {native} ({eng}){suffix}"
-            if i == cursor and not busy:
-                _safe_add(row, 0, _trunc(line_text, max_x), A_FOCUS)
+            checked = code in self.selected
+            is_def = code == self.default_lang
+            trailing = "← default" if is_def else ""
+            tag, text = S.toggle_line(
+                checked, f"{native} ({eng})",
+                focused=(i == self.cursor and not self.busy),
+                trailing=trailing)
+            attr = S.TAG_STYLE.get(tag, S.ATTR_TEXT)
+            S.safe_addstr(self.stdscr, y + (i - scroll), x,
+                          S.truncate(text, w), attr)
+
+    # ── input ──
+
+    def _handle_input(self):
+        key = self.stdscr.getch()
+        if key == -1:
+            return
+
+        if key in (ord("q"), ord("Q"), 27):
+            self._quit = True
+            return
+
+        if self.busy:
+            return
+
+        n = len(LANGUAGES)
+
+        if key in (ord("j"), ord("J"), curses.KEY_DOWN):
+            if self.cursor < n - 1:
+                self.cursor += 1
+        elif key in (ord("k"), ord("K"), curses.KEY_UP):
+            if self.cursor > 0:
+                self.cursor -= 1
+        elif key == ord(" "):
+            code = LANGUAGES[self.cursor][0]
+            if code in self.selected:
+                self.selected.discard(code)
+                if code == self.default_lang and self.selected:
+                    self.default_lang = next(iter(self.selected))
             else:
-                chk_str = "[✓]" if checked else "[ ]"
-                _safe_add(row, 2, chk_str, A_CHECK_ON if checked else A_CHECK_OFF)
-                _safe_add(f" {native}", curses.A_BOLD if checked else A_MUTED)
-                _safe_add(f" ({eng})", A_MUTED | curses.A_DIM if not checked else A_MUTED)
-                if suffix:
-                    _safe_add(suffix, curses.color_pair(2))
-            row += 1
+                self.selected.add(code)
+                self.default_lang = code
+            self.status_msg = ""
+        elif key in (ord("d"), ord("D"), 10, 13):
+            code = LANGUAGES[self.cursor][0]
+            self.selected.add(code)
+            self.default_lang = code
+            self.status_msg = f"Default: {code}"
+            self.status_tone = "ok"
+        elif key in (ord("i"), ord("I")):
+            if not self.selected:
+                self.status_msg = "Select at least one language."
+                self.status_tone = "danger"
+                return
+            self._start_work(force=False)
+        elif key in (ord("r"), ord("R")):
+            if not self.selected:
+                self.status_msg = "Select at least one language."
+                self.status_tone = "danger"
+                return
+            self._start_work(force=True)
+        elif key in (ord("s"), ord("S")):
+            if not self.selected:
+                self.status_msg = "Select at least one language."
+                self.status_tone = "danger"
+                return
+            cfg = {
+                "lang": self.default_lang,
+                "languages": sorted(self.selected),
+                "engine": "onnxruntime",
+            }
+            self.config["ocr"] = cfg
+            err = write_config(self.config)
+            if err is True:
+                self.status_msg = f"✓ Config saved (Default: {self.default_lang})"
+                self.status_tone = "ok"
+            else:
+                self.status_msg = f"✗ Config save failed: {err}"
+                self.status_tone = "danger"
 
-        if busy or status_msg:
-            _safe_add(max_y - footer_h - log_h - 1, 0, "─" * max_x, curses.A_DIM)
 
-        if busy:
-            log_start_y = max_y - footer_h - log_h
-            visible = busy_log[-log_h:]
-            for idx, line in enumerate(visible):
-                ly = log_start_y + idx
-                if ly < max_y - footer_h:
-                    _safe_add(ly, 1, _trunc(line, max_x - 2), A_MUTED)
-        elif status_msg:
-            ok = "✓" in status_msg or "saved" in status_msg or "complete" in status_msg
-            _safe_add(max_y - footer_h - 2, 1, _trunc(status_msg, max_x - 2), A_OK if ok else A_DANGER)
+# ── entry ───────────────────────────────────────────────────────────────
 
-        btn_y = max_y - 1
-        bx = 1
-        active = len(selected) > 0 and not busy
-        buttons = [
-            ("Space", "Toggle", not busy),
-            ("d/Enter", "Default", not busy),
-            ("i", "Install & Download", active),
-            ("r", "Reinstall", not busy),
-            ("s", "Save", active),
-            ("q", "Quit", True),
-        ]
-        _safe_add(btn_y - 1, 0, "─" * max_x, curses.A_DIM)
-        for key, label, en in buttons:
-            attr = A_BTN if en else A_MUTED
-            if bx + len(key) + len(label) + 4 < max_x:
-                _safe_add(btn_y, bx, f"[{key}]", A_ACCENT if en else A_MUTED)
-                _safe_add(f" {label} ", attr)
-                bx += len(label) + len(key) + 4
-
-        stdscr.refresh()
-
+def main():
+    S.setup_locale()
+    try:
+        curses.wrapper(lambda stdscr: OcrSetupTUI(stdscr).run())
+    except KeyboardInterrupt:
+        pass
 
 
 if __name__ == "__main__":
-    locale.setlocale(locale.LC_ALL, "")
-    try:
-        curses.wrapper(main)
-    except KeyboardInterrupt:
-        pass
+    main()

@@ -30,17 +30,22 @@ PopupWindow {
     property string modelStatus: "checking"
     property string modelSize: ""
     property string venvStatus: "checking"
-    property string daemonStatus: "idle"
+    property string daemonStatus: "checking"
     property bool downloadRunning: false
 
-    function open() { root.visible = true }
+    function open() {
+        root.visible = true;
+        GlobalStates.voicePopupOpen = true;
+    }
     function close() {
         root.visible = false;
+        GlobalStates.voicePopupOpen = false;
         root.closed();
     }
 
     Component.onCompleted: {
         root.visible = true;
+        GlobalStates.voicePopupOpen = true;
         refreshAll();
     }
     Component.onDestruction: {
@@ -51,13 +56,12 @@ PopupWindow {
     function refreshAll() {
         modelStatus = "checking";
         venvStatus = "checking";
-        daemonStatus = "idle";
+        daemonStatus = "checking";
         checkModelProc.running = true;
     }
 
     function indicator(status) {
         if (status === "ok") return "●"
-        if (status === "idle") return "●"
         if (status === "missing") return "●"
         if (status === "checking") return "●"
         return "●"
@@ -65,7 +69,6 @@ PopupWindow {
 
     function indicatorColor(status) {
         if (status === "ok") return "#4CAF50"
-        if (status === "idle") return "#9E9E9E"
         if (status === "missing") return "#FF5252"
         if (status === "checking") return "#FFC107"
         return "#FF5252"
@@ -111,7 +114,7 @@ PopupWindow {
     Process {
         id: daemonCheckProc
         command: ["bash", "-c",
-            `if [ -S /tmp/omd-voice.sock ] && ss -x src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo idle; fi`]
+            `if [ -S /tmp/omd-voice.sock ] && ss -xl src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo idle; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 root.daemonStatus = line === "running" ? "ok" : "idle"
@@ -131,8 +134,10 @@ PopupWindow {
 
     onVisibleChanged: {
         if (visible) {
+            GlobalStates.voicePopupOpen = true;
             dismissGuard.restart();
         } else {
+            GlobalStates.voicePopupOpen = false;
             dismissGuard.stop();
             GlobalFocusGrab.removeDismissable(root);
         }
