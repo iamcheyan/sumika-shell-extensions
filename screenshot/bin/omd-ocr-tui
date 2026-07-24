@@ -82,15 +82,15 @@ def check_paddleocr():
         return True
     except ImportError:
         return False
-
-
-TRUNCATE = {}
-
-def run_pip_install(log):
-    log.append("Installing paddleocr + onnxruntime ...")
+def run_pip_install(log, force=False):
+    label = "Force reinstalling" if force else "Installing"
+    log.append(f"{label} paddleocr + onnxruntime ...")
+    cmd = [sys.executable, "-m", "pip", "install", "--quiet", "paddleocr", "onnxruntime"]
+    if force:
+        cmd.insert(3, "--force-reinstall")
     try:
         proc = subprocess.Popen(
-            [sys.executable, "-m", "pip", "install", "--quiet", "paddleocr", "onnxruntime"],
+            cmd,
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
             text=True, bufsize=1,
         )
@@ -100,7 +100,7 @@ def run_pip_install(log):
                 log.append(line)
         proc.wait()
         if proc.returncode == 0:
-            log.append("pip install complete.")
+            log.append(f"{'Reinstall' if force else 'Install'} complete.")
         else:
             log.append(f"pip install FAILED (exit {proc.returncode}).")
         return proc.returncode == 0
@@ -182,6 +182,43 @@ def main(stdscr):
     busy_log = []
     status_msg = ""
     done_event = threading.Event()
+    install_ok = [False]  # mutable container for thread result
+
+    def _start_work(force=False):
+        """Start background install/download thread."""
+        nonlocal busy, busy_log, status_msg, have_ocr
+        busy_log.clear()
+        busy = True
+        done_event.clear()
+        status_msg = ""
+        lang_codes = sorted(selected)
+        cfg = {"lang": default_lang, "languages": lang_codes, "engine": "onnxruntime"}
+
+        def _work():
+            log = busy_log
+            install_ok[0] = True
+            if force:
+                ok = run_pip_install(log, force=True)
+            else:
+                ok = run_pip_install(log)
+            if ok:
+                for code in lang_codes:
+                    if code in PADDLEOCR_CODES:
+                        if not download_model(code, log):
+                            install_ok[0] = False
+            log.append("")
+            log.append("Saving config...")
+            config["ocr"] = cfg
+            r = write_config(config)
+            if r is True:
+                log.append("Config saved to sumika.json")
+            else:
+                log.append(f"WARNING: {r}")
+            log.append("Press i/r to (re)install or q to quit.")
+            done_event.set()
+
+        t = threading.Thread(target=_work, daemon=True)
+        t.start()
 
     while True:
         max_y, max_x = stdscr.getmaxyx()
@@ -306,9 +343,9 @@ def main(stdscr):
         # Buttons
         btn_y = box_y + box_h - 2
         bx = box_x + 2
-        active = len(selected) > 0 and not busy
         buttons = [
             ("i", " Install & Download ", active),
+            ("r", " Reinstall (force) ", not busy),
             ("s", " Save Config ", active),
             ("q", " Quit ", True),
         ]
@@ -344,10 +381,10 @@ def main(stdscr):
         if busy and done_event.is_set():
             busy = False
             have_ocr = check_paddleocr()
-            if install_result:
+            if install_ok[0]:
                 status_msg = "\u2713 Installation complete and config saved!"
             else:
-                status_msg = "\u2713 Installed, but some steps had issues."
+                status_msg = "\u2717 Installation had issues."
             continue
 
         # Input
@@ -373,34 +410,12 @@ def main(stdscr):
             if not selected:
                 status_msg = "Select at least one language."
                 continue
-            busy_log.clear()
-            busy = True
-            done_event.clear()
-            status_msg = ""
-            lang_codes = sorted(selected)
-            cfg = {"lang": default_lang, "languages": lang_codes, "engine": "onnxruntime"}
-
-            def _work():
-                log = busy_log
-                ok = run_pip_install(log)
-                if ok:
-                    for code in lang_codes:
-                        if code in PADDLEOCR_CODES:
-                            download_model(code, log)
-                log.append("")
-                log.append("Saving config...")
-                config["ocr"] = cfg
-                r = write_config(config)
-                if r is True:
-                    log.append("Config saved to sumika.json")
-                else:
-                    log.append(f"WARNING: {r}")
-                log.append("Press i to install more or q to quit.")
-                done_event.set()
-
-            install_result = True
-            t = threading.Thread(target=_work, daemon=True)
-            t.start()
+            _start_work(force=False)
+        elif key == ord("r") and not busy:
+            if not selected:
+                status_msg = "Select at least one language."
+                continue
+            _start_work(force=True)
         elif key == ord("s") and not busy:
             if not selected:
                 status_msg = "Select at least one language."
