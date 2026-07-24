@@ -18,9 +18,10 @@ import unicodedata
 
 OMD_ROOT = os.environ.get("OMD_ROOT", os.path.expanduser("~/.config/omd"))
 _SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
-if not os.path.isfile(os.path.join(OMD_ROOT, "bin/omd_tui_framework.py")):
-    # Running from an extension, not the main repo
-    OMD_ROOT = os.path.dirname(_SCRIPT_DIR)  # parent of bin/
+_EXT_ROOT = os.path.dirname(_SCRIPT_DIR)  # parent of bin/
+if os.path.isfile(os.path.join(_EXT_ROOT, "module.json")):
+    # Running from an extension directory — module.json only exists in extensions
+    OMD_ROOT = _EXT_ROOT
 
 # ── colour pairs ─────────────────────────────────────────────────────────
 C_BG, C_FG, C_ACCENT, C_MUTED = 0, 1, 2, 3
