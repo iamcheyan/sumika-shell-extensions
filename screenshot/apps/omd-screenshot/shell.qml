@@ -4,11 +4,13 @@
 //@ pragma Env QT_QUICK_FLICKABLE_WHEEL_DECELERATION=10000
 //@ pragma Env QT_IM_MODULE=fcitx
 
+import qs
+import qs.modules.common
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
 import Quickshell.Io
-import "../../regionSelector"
+import "./regionSelector"
 
 ShellRoot {
     id: root

@@ -1,0 +1,79 @@
+#!/usr/bin/env python3
+"""
+OMD OCR — extract text from an image using PaddleOCR (PP-OCRv6).
+
+Usage:
+  omd-ocr <image_path>
+
+Outputs recognized text lines to stdout, one per line.
+"""
+
+import sys
+import os
+import json
+import warnings
+warnings.filterwarnings("ignore")
+
+os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "1"
+os.environ["GLOG_minloglevel"] = "2"
+
+try:
+    from paddleocr import PaddleOCR
+except ImportError:
+    import subprocess
+    notify = lambda t, b: subprocess.run(
+        ["notify-send", "-a", "OMD OCR", "-t", "5000", t, b],
+        capture_output=True, timeout=5)
+    notify("OCR: Installing dependencies", "Installing paddleocr + onnxruntime...")
+    result = subprocess.run(
+        ["pip", "install", "--quiet", "paddleocr", "onnxruntime"],
+        capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        msg = result.stderr.strip().split("\n")[-3:]
+        notify("OCR: Install failed", "; ".join(msg))
+        print("Auto-install failed:", "; ".join(msg), file=sys.stderr)
+        print("Try: pip install paddleocr onnxruntime", file=sys.stderr)
+        sys.exit(1)
+    notify("OCR: Ready", "Dependencies installed successfully")
+    from paddleocr import PaddleOCR
+
+if len(sys.argv) < 2:
+    print(f"Usage: {sys.argv[0]} <image_path>", file=sys.stderr)
+    sys.exit(1)
+
+image_path = sys.argv[1]
+if not os.path.isfile(image_path):
+    print(f"File not found: {image_path}", file=sys.stderr)
+    sys.exit(1)
+
+def _ocr_config():
+    cfg_home = os.environ.get("SUMIKA_SHELL_CONFIG_HOME") or os.path.join(
+        os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "sumika-shell"
+    )
+    sumika_path = os.path.join(cfg_home, "sumika.json")
+    if os.path.isfile(sumika_path):
+        try:
+            with open(sumika_path) as f:
+                data = json.load(f)
+            ocr_cfg = data.get("ocr", {})
+            if ocr_cfg:
+                return ocr_cfg.get("lang", "ch"), ocr_cfg.get("engine", "onnxruntime")
+        except (json.JSONDecodeError, IOError):
+            pass
+    old_path = os.path.join(cfg_home, "ocr.json")
+    try:
+        with open(old_path) as f:
+            cfg = json.load(f)
+        return cfg.get("lang", "ch"), cfg.get("engine", "onnxruntime")
+    except (FileNotFoundError, json.JSONDecodeError):
+        return "ch", "onnxruntime"
+
+ocr_lang, ocr_engine = _ocr_config()
+ocr = PaddleOCR(lang=ocr_lang, engine=ocr_engine)
+result = ocr.predict(image_path)
+
+for page in result:
+    for text in page.get("rec_texts", []):
+        text = text.strip()
+        if text:
+            print(text)

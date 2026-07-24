@@ -33,13 +33,8 @@ Item {
         }
 
         // Right click: open context menu
-        MouseArea {
-            anchors.fill: parent
-            acceptedButtons: Qt.RightButton
-            cursorShape: Qt.PointingHandCursor
-            onClicked: {
-                menuLoader.active = true;
-            }
+        altAction: function(event) {
+            menuLoader.active = true;
         }
     }
 
