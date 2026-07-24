@@ -113,10 +113,20 @@ def download_model(lang_code, log):
     log.append(f"  Downloading {lang_code} model ...")
     try:
         os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "1"
-        os.environ["GLOG_minloglevel"] = "2"
-        from paddleocr import PaddleOCR
-        ocr = PaddleOCR(lang=lang_code, engine="onnxruntime")
-        del ocr
+        os.environ["GLOG_minloglevel"] = "3"
+        os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+        # Suppress PaddleOCR/ONNX stderr noise during model init
+        old_stderr = os.dup(2)
+        try:
+            devnull_fd = os.open(os.devnull, os.O_WRONLY)
+            os.dup2(devnull_fd, 2)
+            os.close(devnull_fd)
+            from paddleocr import PaddleOCR
+            ocr = PaddleOCR(lang=lang_code, engine="onnxruntime", show_log=False)
+            del ocr
+        finally:
+            os.dup2(old_stderr, 2)
+            os.close(old_stderr)
         log.append(f"  {lang_code} model ready.")
         return True
     except Exception as e:

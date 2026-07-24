@@ -11,11 +11,14 @@ Outputs recognized text lines to stdout, one per line.
 import subprocess
 import os
 import json
+import sys
 import warnings
 warnings.filterwarnings("ignore")
 
 os.environ["PADDLE_PDX_DISABLE_MODEL_SOURCE_CHECK"] = "1"
-os.environ["GLOG_minloglevel"] = "2"
+os.environ["GLOG_minloglevel"] = "3"
+os.environ["TF_CPP_MIN_LOG_LEVEL"] = "3"
+
 def _notify(title, body):
     subprocess.run(["notify-send", "-a", "OMD OCR", "-t", "8000", title, body],
                    capture_output=True, timeout=5)
@@ -42,6 +45,19 @@ def _ocr_config():
     except (FileNotFoundError, json.JSONDecodeError):
         return "ch", "onnxruntime"
 
+def _suppressed_paddleocr(lang, engine):
+    """Create PaddleOCR instance with stderr fully suppressed."""
+    old_stderr = os.dup(2)
+    try:
+        devnull_fd = os.open(os.devnull, os.O_WRONLY)
+        os.dup2(devnull_fd, 2)
+        os.close(devnull_fd)
+        from paddleocr import PaddleOCR
+        return PaddleOCR(lang=lang, engine=engine, show_log=False)
+    finally:
+        os.dup2(old_stderr, 2)
+        os.close(old_stderr)
+
 if len(sys.argv) < 2:
     print(f"Usage: {sys.argv[0]} <image_path>", file=sys.stderr)
     sys.exit(1)
@@ -50,6 +66,7 @@ image_path = sys.argv[1]
 if not os.path.isfile(image_path):
     print(f"File not found: {image_path}", file=sys.stderr)
     sys.exit(1)
+
 ocr_lang, ocr_engine = _ocr_config()
 notify_lang = {"ch": "简体中文", "en": "English", "japan": "日本語", "korean": "한국어",
                "fr": "Français", "de": "Deutsch", "es": "Español", "pt": "Português",
@@ -57,6 +74,7 @@ notify_lang = {"ch": "简体中文", "en": "English", "japan": "日本語", "kor
 
 try:
     from paddleocr import PaddleOCR
+    _ = PaddleOCR  # warm import
 except ImportError:
     _notify("OCR: Installing dependencies",
             f"Language: {notify_lang} — installing paddleocr + onnxruntime...")
@@ -73,7 +91,7 @@ except ImportError:
 
 _notify("OCR: Starting", f"Downloading {notify_lang} model if needed...")
 try:
-    ocr = PaddleOCR(lang=ocr_lang, engine=ocr_engine)
+    ocr = _suppressed_paddleocr(ocr_lang, ocr_engine)
 except Exception as e:
     msg = str(e).strip().split("\n")[-1]
     _notify("OCR: Model download failed", msg)
@@ -84,6 +102,4 @@ result = ocr.predict(image_path)
 
 for page in result:
     for text in page.get("rec_texts", []):
-        text = text.strip()
-        if text:
-            print(text)
+        print(text)
