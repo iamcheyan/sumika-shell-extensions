@@ -29,6 +29,14 @@ STATE_FILE="$STATE_DIR/state.json"
 RECENT_FILE="$STATE_DIR/recent.json"
 MODEL_BYTES_TOTAL=240000000  # ~229 MB SenseVoice Small INT8, used for progress estimate
 
+# Paths for model, venv, daemon socket, and recording PID
+MODEL_DIR="${OMD_VOICE_MODEL:-$HOME/.cache/omd-voice/sense-voice-small-int8}"
+VENV_DIR="${OMD_VOICE_VENV:-$HOME/.cache/omd-voice/venv}"
+CACHE_DIR="${OMD_VOICE_CACHE:-$HOME/.cache/omd-voice}"
+SOCKET="/tmp/omd-voice.sock"
+REC_PID_PATH="${OMD_VOICE_REC_PID:-/tmp/omd-voice-rec.pid}"
+BINDINGS_FILE="${OMD_VOICE_BINDINGS:-$HOME/.config/voice_bindings.txt}"
+
 kv() {
   local key="$1" value="${2:-}"
   value="${value//$'\n'/ }"
@@ -61,7 +69,7 @@ venv_ready() {
 }
 
 daemon_running() {
-  [[ -S "$SOCKET" ]] && ss -x src "$SOCKET" 2>/dev/null | grep -q LISTEN
+  [[ -S "$SOCKET" ]] && ss -xl src "$SOCKET" 2>/dev/null | grep -q LISTEN
 }
 
 recording_active() {
