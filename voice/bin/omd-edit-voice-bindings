@@ -1,6 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-: "${EDITOR:=vi}"
 bindings_file="$HOME/.config/voice_bindings.txt"
 
 mkdir -p "$(dirname "$bindings_file")"
@@ -12,4 +11,4 @@ if [[ ! -f "$bindings_file" ]]; then
 EOF
 fi
 
-exec "$EDITOR" "$bindings_file"
+exec xdg-terminal-exec --app-id=org.omd.omd-edit-voice-bindings vi "$bindings_file"

@@ -64,9 +64,9 @@ Item {
                 : "voice";
         }
 
-        // Right click: open context menu
+        // Right click: show model status popup
         altAction: function(event) {
-            menuLoader.active = true;
+            statusPopupLoader.active = true;
         }
     }
 
@@ -147,24 +147,23 @@ Item {
         if (root.isError)
             recordingBlink.start();
     }
-    // Context menu for right-click
+    // Right-click: model status popup
     Loader {
-        id: menuLoader
+        id: statusPopupLoader
         active: false
-        source: "VoiceContextMenu.qml"
+        source: "VoiceModelStatusPopup.qml"
         onLoaded: {
-            item.anchor = {
-                window: root.QsWindow.window,
-                item: button,
-                gravity: Config.options.bar.vertical
-                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom),
-                edges: Config.options.bar.vertical
-                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom)
-            };
+            const a = item.anchor;
+            a.window = root.QsWindow.window;
+            a.item = button;
+            a.gravity = Config.options.bar.vertical
+                ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
+                : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
+            a.edges = Config.options.bar.vertical
+                ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
+                : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
             item.open();
-            item.menuClosed.connect(() => menuLoader.active = false);
+            item.closed.connect(() => statusPopupLoader.active = false);
         }
     }
 }

@@ -204,7 +204,7 @@ PopupWindow {
                     implicitHeight: root.itemHeight
                     StyledText {
                         anchors.centerIn: parent
-                        text: "离线模型状态"
+                        text: "Offline Model Status"
                         color: TuiStyle.fg
                         font { pixelSize: 14; weight: Font.Medium }
                     }
@@ -261,21 +261,21 @@ PopupWindow {
                 }
 
                 StatusRow {
-                    label: "模型文件 (SenseVoice)"
+                    label: "Model File (SenseVoice)"
                     status: root.modelStatus
                     detail: root.modelSize
                 }
 
                 StatusRow {
-                    label: "Python 虚拟环境"
+                    label: "Python Virtual Environment"
                     status: root.venvStatus
-                    detail: root.venvStatus === "ok" ? "已就绪" : ""
+                    detail: root.venvStatus === "ok" ? "Ready" : ""
                 }
 
                 StatusRow {
-                    label: "语音守护进程"
+                    label: "Voice Daemon"
                     status: root.daemonStatus
-                    detail: root.daemonStatus === "ok" ? "运行中" : ""
+                    detail: root.daemonStatus === "ok" ? "Running" : ""
                 }
 
                 Rectangle {
@@ -311,7 +311,7 @@ PopupWindow {
 
                         contentItem: StyledText {
                             anchors.centerIn: parent
-                            text: root.downloadRunning ? "下载中…" : "重新下载"
+                            text: root.downloadRunning ? "Downloading…" : "Redownload"
                             color: downloadBtn.enabled ? TuiStyle.fg : TuiStyle.fgSub
                             font.pixelSize: 13
                         }
@@ -340,17 +340,16 @@ PopupWindow {
 
                         contentItem: StyledText {
                             anchors.centerIn: parent
-                            text: "刷新"
+                            text: "Refresh"
                             color: TuiStyle.fg
                             font.pixelSize: 13
                         }
 
                         onClicked: root.refreshAll()
                     }
-
                     RippleButton {
                         implicitHeight: root.itemHeight
-                        implicitWidth: 80
+                        implicitWidth: 120
                         buttonRadius: 6
                         horizontalPadding: root.hPadding
                         colBackground: "transparent"
@@ -359,14 +358,31 @@ PopupWindow {
                         borderWidth: 1
                         borderColor: TuiStyle.panelAlt
 
-                        contentItem: StyledText {
-                            anchors.centerIn: parent
-                            text: "关闭"
-                            color: TuiStyle.fg
-                            font.pixelSize: 13
+                        contentItem: RowLayout {
+                            anchors.fill: parent
+                            anchors.leftMargin: root.hPadding
+                            anchors.rightMargin: root.hPadding
+                            spacing: 6
+                            StyledText {
+                                text: NerdIconMap.keyboard
+                                color: TuiStyle.fg
+                                font.pixelSize: 14
+                                Layout.alignment: Qt.AlignVCenter
+                            }
+                            StyledText {
+                                text: "Edit Hotkeys"
+                                color: TuiStyle.fg
+                                font.pixelSize: 13
+                                Layout.fillWidth: true
+                                Layout.alignment: Qt.AlignVCenter
+                            }
                         }
 
-                        onClicked: root.close()
+                        onClicked: {
+                            root.close();
+                            Quickshell.execDetached(["bash", "-c",
+                                `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/omd-edit-voice-bindings"`]);
+                        }
                     }
                 }
             }

@@ -11,8 +11,8 @@ import Quickshell
 
 PopupWindow {
     id: root
-
     signal menuClosed()
+    signal requestModelCheck()
 
     color: "transparent"
 
@@ -123,6 +123,7 @@ PopupWindow {
                     id: itemRoot
                     property string menuIcon: ""
                     property string label: ""
+                    property color color: TuiStyle.fg
 
                     buttonRadius:      root.itemRadius
                     horizontalPadding: root.hPadding
@@ -147,14 +148,14 @@ PopupWindow {
                                 anchors.centerIn: parent
                                 iconSize: root.iconSize
                                 text:     itemRoot.menuIcon
-                                color:    TuiStyle.fg
+                                color:    itemRoot.color
                                 visible:  itemRoot.menuIcon !== ""
                             }
                         }
                         StyledText {
                             Layout.fillWidth: true
                             text:             itemRoot.label
-                            color:            TuiStyle.fg
+                            color:            itemRoot.color
                             elide:            Text.ElideRight
                             font {
                                 pixelSize: 13
@@ -166,34 +167,24 @@ PopupWindow {
 
                 MenuItem {
                     menuIcon: NerdIconMap.cpu
-                    label: "离线模型检测"
+                    label: "Offline Model Check"
                     onClicked: {
+                        root.requestModelCheck();
                         root.close();
-                        statusLoader.active = true;
                     }
                 }
 
                 MenuItem {
                     menuIcon: NerdIconMap.keyboard
-                    label: "快捷键配置"
+                    label: "Hotkey Config"
                     onClicked: {
-                        root.close();
                         Quickshell.execDetached(["bash", "-c",
                             `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/omd-edit-voice-bindings"`]);
+                        root.close();
                     }
                 }
             }
         }
     }
 
-    // Model status popup — instantiated on demand
-    Loader {
-        id: statusLoader
-        active: false
-        source: "VoiceModelStatusPopup.qml"
-        onLoaded: {
-            item.open();
-            item.closed.connect(() => statusLoader.active = false);
-        }
-    }
 }
