@@ -167,19 +167,8 @@ Item {
     Loader {
         id: menuLoader
         active: false
-        source: "VoiceContextMenu.qml"
-        onLoaded: {
-            const a = item.anchor;
-            a.window = root.QsWindow.window;
-            a.item = button;
-            a.gravity = Config.options.bar.vertical
-                ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
-            a.edges = Config.options.bar.vertical
-                ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
-            item.open();
-            item.menuClosed.connect(() => menuLoader.active = false);
+        sourceComponent: VoiceContextMenu {
+            onMenuClosed: menuLoader.active = false
         }
     }
 }

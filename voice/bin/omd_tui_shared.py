@@ -1129,7 +1129,7 @@ class Layout:
     @staticmethod
     def draw_hero(stdscr, hero_data):
         """Draw hero header at the top of the screen."""
-        import omd_tui_framework as _S
+        import omd_tui_shared as _S
         _S.draw_hero(stdscr, hero_data)
 
     @staticmethod
