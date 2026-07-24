@@ -12,15 +12,13 @@ import Quickshell
 PopupWindow {
     id: root
 
-    property string shareDir: FileUtils.trimFileProtocol(Qt.resolvedUrl("..")) + "/bin"
-
     // Style tokens aligned with TuiStyle and GNOME-style appearance
-    readonly property int   itemHeight:      36
+    readonly property int   itemHeight:      32
     readonly property int   itemRadius:       6
     readonly property int   iconColumnWidth: 20
     readonly property int   iconSize:        18
-    readonly property real  hPadding:        10
-    readonly property real  menuPadding:      6
+    readonly property real  hPadding:         8
+    readonly property real  menuPadding:      4
     readonly property real  outerPadding:     Appearance.sizes.elevationMargin
 
     signal menuClosed()
@@ -33,7 +31,7 @@ PopupWindow {
     function open()  {
         root.visible = true;
     }
-
+    
     function close() {
         root.visible = false;
         root.menuClosed();
@@ -46,7 +44,7 @@ PopupWindow {
 
     Timer {
         id: dismissGuard
-        interval: 50
+        interval: 180
         repeat: false
         onTriggered: {
             if (root.visible)
@@ -130,13 +128,12 @@ PopupWindow {
                     id: itemRoot
                     property string menuIcon: ""
                     property string label: ""
-                    property string sublabel: ""
                     property color color: TuiStyle.fg
-
+                    
                     buttonRadius:      root.itemRadius
                     horizontalPadding: root.hPadding
-                    topPadding:        4
-                    bottomPadding:     4
+                    topPadding:        0
+                    bottomPadding:     0
                     implicitHeight:    root.itemHeight
                     height:            root.itemHeight
                     Layout.fillWidth:  true
@@ -147,7 +144,7 @@ PopupWindow {
                     borderWidth:        0
 
                     contentItem: RowLayout {
-                        spacing: 10
+                        spacing: 8
                         Item {
                             Layout.preferredWidth:  root.iconColumnWidth
                             Layout.preferredHeight: root.iconColumnWidth
@@ -160,29 +157,14 @@ PopupWindow {
                                 visible:  itemRoot.menuIcon !== ""
                             }
                         }
-                        ColumnLayout {
+                        StyledText {
                             Layout.fillWidth: true
-                            spacing: 1
-                            StyledText {
-                                Layout.fillWidth: true
-                                text:             itemRoot.label
-                                color:            itemRoot.color
-                                elide:            Text.ElideRight
-                                font {
-                                    pixelSize: 13
-                                    weight:    Font.Medium
-                                }
-                            }
-                            StyledText {
-                                Layout.fillWidth: true
-                                text:             itemRoot.sublabel
-                                color:            TuiStyle.fgMuted
-                                elide:            Text.ElideRight
-                                visible:          itemRoot.sublabel !== ""
-                                font {
-                                    pixelSize: 10
-                                    weight:    Font.Normal
-                                }
+                            text:             itemRoot.label
+                            color:            itemRoot.color
+                            elide:            Text.ElideRight
+                            font {
+                                pixelSize: 13
+                                weight:    Font.Normal
                             }
                         }
                     }
@@ -200,10 +182,9 @@ PopupWindow {
 
                 MenuItem {
                     menuIcon: NerdIconMap.cpu
-                    label: "离线模型管理 & 检测 (TUI)"
-                    sublabel: "SenseVoice 模型下载、检测与重装"
+                    label: "Model Manager (TUI)"
                     onClicked: {
-                        Quickshell.execDetached([root.shareDir + "/omd-launch-settings-voice-tui"]);
+                        Quickshell.execDetached(["omd-launch-settings-voice-tui"]);
                         root.close();
                     }
                 }
@@ -212,10 +193,9 @@ PopupWindow {
 
                 MenuItem {
                     menuIcon: NerdIconMap.keyboard
-                    label: "配置文件 / 快捷键设置"
-                    sublabel: "编辑 ~/.config/voice_bindings.txt"
+                    label: "Edit Keybindings"
                     onClicked: {
-                        Quickshell.execDetached([root.shareDir + "/omd-edit-voice-bindings"]);
+                        Quickshell.execDetached(["omd-edit-voice-bindings"]);
                         root.close();
                     }
                 }
