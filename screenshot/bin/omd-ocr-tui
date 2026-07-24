@@ -343,6 +343,7 @@ def main(stdscr):
         # Buttons
         btn_y = box_y + box_h - 2
         bx = box_x + 2
+        active = len(selected) > 0 and not busy
         buttons = [
             ("i", " Install & Download ", active),
             ("r", " Reinstall (force) ", not busy),
