@@ -1,17 +1,17 @@
 import qs
 import qs.modules.bar
-import qs.modules.inputMethod
+import qs.modules.inputMethod as InputMethodMod
 import qs.modules.common
 import qs.modules.common.widgets
 import qs.modules.common.functions
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import qs.modules.popupComponents
+import qs.modules.common.widgets
 import qs.core.runtime
 
 PopupColumn {
-    readonly property var im: InputMethod
+    readonly property var im: InputMethodMod.InputMethod
 
     id: inputMethodPanel
 
@@ -57,7 +57,7 @@ PopupColumn {
                 cursorShape: Qt.PointingHandCursor
                 onClicked: {
                     const returnAddress = ServiceManager.workspace.activeWindow?.address || "";
-                    root.close();
+                    GlobalStates.barPopupType = "";
                     im.selectSchema(languageRow.modelData.schema, returnAddress);
                 }
             }
@@ -136,7 +136,7 @@ PopupColumn {
         Layout.fillWidth: true
         label: "Fcitx configuration…"
         onClicked: {
-            root.close();
+            GlobalStates.barPopupType = "";
             im.openConfiguration();
         }
     }

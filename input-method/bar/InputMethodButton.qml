@@ -1,5 +1,5 @@
 import qs
-import qs.modules.inputMethod
+import qs.modules.inputMethod as InputMethodMod
 import qs.modules.voice
 import qs.modules.common
 import qs.modules.common.widgets
@@ -10,7 +10,7 @@ BarModuleButton {
     id: root
 
     // Voice input state
-    readonly property string voiceState: VoiceInput.state
+    readonly property string voiceState: (typeof VoiceInput !== "undefined" && VoiceInput) ? (VoiceInput.state ?? "") : ""
     readonly property bool isRecording: voiceState === "recording"
     readonly property bool isTranscribing: voiceState === "transcribing"
     readonly property bool isSetup: voiceState === "setup"
@@ -31,7 +31,7 @@ BarModuleButton {
         if (root.isSetup) return "#F5C542"
         return Appearance.colors.colBarText
     }
-    visible: root.usingVoiceUi || (Config.options.inputMethod.enabled && InputMethod.available)
+    visible: root.usingVoiceUi || (Config.options.inputMethod.enabled && InputMethodMod.InputMethod.available)
     active: GlobalStates.barPopupType === "inputMethod"
 
     onClicked: {
@@ -39,7 +39,7 @@ BarModuleButton {
         if (root.usingVoiceUi) {
             VoiceInput.toggle();
         } else {
-            InputMethod.refresh();
+            InputMethodMod.InputMethod.refresh();
             GlobalStates.barPopupType = GlobalStates.barPopupType === "inputMethod" ? "" : "inputMethod";
         }
     }
