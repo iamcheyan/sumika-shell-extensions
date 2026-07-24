@@ -9,7 +9,7 @@
   "contributes": {
     "services": ["voice-input"],
     "widgets": [
-      {"id": "voice-bar-button", "name": "Voice", "slot": "right", "component": "bar/InputMethodButton.qml", "order": 55}
+      {"id": "voice-bar-button", "name": "Voice", "slot": "right", "component": "bar/VoiceButton.qml", "order": 55}
     ],
     "popupSections": [
       {"id": "voice-popup", "type": "voice", "name": "Voice Input", "component": "popup/VoicePopup.qml"}

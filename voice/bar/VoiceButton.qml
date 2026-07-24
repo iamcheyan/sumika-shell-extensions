@@ -5,18 +5,13 @@ import qs.modules.common
 import qs.modules.common.widgets
 import QtQuick
 import QtQuick.Layouts
-import qs.core.runtime
 
 Item {
     id: root
-    property bool hideForInputMethod: ModuleLoader.isEnabled("input-method")
-    // Zero out implicit size when hidden so the parent Loader collapses in RowLayout
-    implicitWidth: hideForInputMethod ? 0 : Config.options.bar.rightIconSlotWidth
-    implicitHeight: hideForInputMethod ? 0 : Config.options.bar.rightIconSlotWidth
-    visible: !hideForInputMethod
-    Layout.fillHeight: !hideForInputMethod
-    Layout.minimumWidth: 0
-    Layout.minimumHeight: 0
+
+    implicitWidth: Config.options.bar.rightIconSlotWidth
+    implicitHeight: Config.options.bar.rightIconSlotWidth
+    Layout.fillHeight: true
 
     // Voice input state
     readonly property string voiceState: VoiceInput.state
