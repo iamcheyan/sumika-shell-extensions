@@ -47,6 +47,11 @@ Window {
 
     Component.onCompleted: root.open()
 
+    Shortcut {
+        sequence: "Escape"
+        onActivated: root.close()
+    }
+
     MouseArea {
         anchors.fill: parent
         acceptedButtons: Qt.LeftButton | Qt.RightButton
