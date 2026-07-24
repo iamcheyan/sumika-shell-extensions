@@ -30,7 +30,7 @@ PopupWindow {
     property string modelStatus: "checking"
     property string modelSize: ""
     property string venvStatus: "checking"
-    property string daemonStatus: "checking"
+    property string daemonStatus: "idle"
     property bool downloadRunning: false
 
     function open() { root.visible = true }
@@ -51,12 +51,13 @@ PopupWindow {
     function refreshAll() {
         modelStatus = "checking";
         venvStatus = "checking";
-        daemonStatus = "checking";
+        daemonStatus = "idle";
         checkModelProc.running = true;
     }
 
     function indicator(status) {
         if (status === "ok") return "●"
+        if (status === "idle") return "●"
         if (status === "missing") return "●"
         if (status === "checking") return "●"
         return "●"
@@ -64,6 +65,7 @@ PopupWindow {
 
     function indicatorColor(status) {
         if (status === "ok") return "#4CAF50"
+        if (status === "idle") return "#9E9E9E"
         if (status === "missing") return "#FF5252"
         if (status === "checking") return "#FFC107"
         return "#FF5252"
@@ -109,10 +111,10 @@ PopupWindow {
     Process {
         id: daemonCheckProc
         command: ["bash", "-c",
-            `if [ -S /tmp/omd-voice.sock ] && ss -x src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo ok; else echo missing; fi`]
+            `if [ -S /tmp/omd-voice.sock ] && ss -x src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo idle; fi`]
         stdout: SplitParser {
             onRead: (line) => {
-                root.daemonStatus = line === "ok" ? "ok" : "missing"
+                root.daemonStatus = line === "running" ? "ok" : "idle"
             }
         }
     }
@@ -275,7 +277,7 @@ PopupWindow {
                 StatusRow {
                     label: "Voice Daemon"
                     status: root.daemonStatus
-                    detail: root.daemonStatus === "ok" ? "Running" : ""
+                    detail: root.daemonStatus === "ok" ? "Running" : root.daemonStatus === "idle" ? "Auto-start on use" : ""
                 }
 
                 Rectangle {
