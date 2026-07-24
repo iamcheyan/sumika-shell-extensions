@@ -48,6 +48,17 @@ Item {
         id: menuLoader
         active: false
         sourceComponent: ScreenshotContextMenu {
+            Component.onCompleted: this.open()
+            anchor {
+                window: root.QsWindow.window
+                item: button
+                gravity: Config.options.bar.vertical
+                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
+                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom)
+                edges: Config.options.bar.vertical
+                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
+                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom)
+            }
             onMenuClosed: menuLoader.active = false
         }
     }

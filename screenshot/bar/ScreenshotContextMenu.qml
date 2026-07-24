@@ -9,10 +9,8 @@ import QtQuick.Layouts
 import Qt5Compat.GraphicalEffects
 import Quickshell
 
-Window {
+PopupWindow {
     id: root
-
-    title: "screenshot-context-menu"
 
     // Style tokens aligned with TuiStyle and GNOME-style appearance
     readonly property int   itemHeight:      32
@@ -26,10 +24,9 @@ Window {
     signal menuClosed()
 
     color: "transparent"
-    flags: Qt.FramelessWindowHint
 
-    width:  popupBackground.implicitWidth  + root.outerPadding * 2
-    height: popupBackground.implicitHeight + root.outerPadding * 2
+    implicitWidth:  popupBackground.implicitWidth  + root.outerPadding * 2
+    implicitHeight: popupBackground.implicitHeight + root.outerPadding * 2
 
     function open()  {
         root.visible = true;
@@ -40,16 +37,35 @@ Window {
         root.menuClosed();
     }
 
-    onActiveChanged: {
-        if (!root.active && root.visible)
-            root.close();
+    Component.onDestruction: {
+        dismissGuard.stop();
+        GlobalFocusGrab.removeDismissable(root);
     }
 
-    Component.onCompleted: root.open()
+    Timer {
+        id: dismissGuard
+        interval: 180
+        repeat: false
+        onTriggered: {
+            if (root.visible)
+                GlobalFocusGrab.addDismissable(root);
+        }
+    }
 
-    Shortcut {
-        sequence: "Escape"
-        onActivated: root.close()
+    onVisibleChanged: {
+        if (visible) {
+            dismissGuard.restart();
+        } else {
+            dismissGuard.stop();
+            GlobalFocusGrab.removeDismissable(root);
+        }
+    }
+
+    Connections {
+        target: GlobalFocusGrab
+        function onDismissed() {
+            root.close()
+        }
     }
 
     MouseArea {
@@ -96,6 +112,8 @@ Window {
             implicitHeight: columnLayout.implicitHeight + root.menuPadding * 2
 
             Behavior on opacity        { animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(popupBackground) }
+            Behavior on implicitHeight { animation: Appearance.animation.elementResize.numberAnimation.createObject(popupBackground) }
+            Behavior on implicitWidth  { animation: Appearance.animation.elementResize.numberAnimation.createObject(popupBackground) }
 
             ColumnLayout {
                 id: columnLayout
@@ -241,6 +259,8 @@ Window {
                         root.close();
                     }
                 }
+
+
             }
         }
     }
