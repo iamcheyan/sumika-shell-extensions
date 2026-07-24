@@ -64,14 +64,11 @@ Item {
                 : "voice";
         }
 
-        // Right click: show model status popup
+        // Right click: show context menu
         altAction: function(event) {
-            if (GlobalStates.barPopupType === "voiceModel") {
-                GlobalStates.barPopupType = "";
-            } else {
-                statusPopupLoader.active = true;
-            }
+            menuLoader.active = !menuLoader.active;
         }
+
 
     }
 
@@ -97,10 +94,10 @@ Item {
             NumberAnimation { from: 1.65; to: 1.0; duration: 0 }
         }
         SequentialAnimation on opacity {
-            running: root.isRecording
+            running: root.isRecording || root.isTranscribing
             loops: Animation.Infinite
-            NumberAnimation { from: 0.75; to: 0; duration: 750; easing.type: Easing.OutCubic }
-            NumberAnimation { from: 0; to: 0.75; duration: 0 }
+            NumberAnimation { to: 0.8; duration: 600; easing.type: Easing.InOutQuad }
+            NumberAnimation { to: 0.1; duration: 600; easing.type: Easing.InOutQuad }
         }
     }
 
@@ -119,11 +116,25 @@ Item {
     // Recording blink animation
     SequentialAnimation {
         id: recordingBlink
-        running: false
-        loops: 2
-        NumberAnimation { target: icon; property: "opacity"; from: 1.0; to: 0.3; duration: 500 }
-        NumberAnimation { target: icon; property: "opacity"; from: 0.3; to: 1.0; duration: 500 }
-        onStopped: icon.opacity = 1.0
+        loops: 3
+        PropertyAnimation {
+            target: icon
+            property: "rotation"
+            to: 15
+            duration: 50
+        }
+        PropertyAnimation {
+            target: icon
+            property: "rotation"
+            to: -15
+            duration: 50
+        }
+        PropertyAnimation {
+            target: icon
+            property: "rotation"
+            to: 0
+            duration: 50
+        }
     }
 
     // Transcribing rotation animation
@@ -152,11 +163,11 @@ Item {
         if (root.isError)
             recordingBlink.start();
     }
-    // Right-click: model status popup
+    // Right-click: context menu loader
     Loader {
-        id: statusPopupLoader
+        id: menuLoader
         active: false
-        source: "VoiceModelStatusPopup.qml"
+        source: "VoiceContextMenu.qml"
         onLoaded: {
             const a = item.anchor;
             a.window = root.QsWindow.window;
@@ -168,7 +179,7 @@ Item {
                 ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
                 : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
             item.open();
-            item.closed.connect(() => statusPopupLoader.active = false);
+            item.menuClosed.connect(() => menuLoader.active = false);
         }
     }
 }

@@ -11,23 +11,29 @@ import Quickshell
 
 PopupWindow {
     id: root
+
+    property string shareDir: FileUtils.trimFileProtocol(Qt.resolvedUrl("..")) + "/bin"
+
+    // Style tokens aligned with TuiStyle and GNOME-style appearance
+    readonly property int   itemHeight:      36
+    readonly property int   itemRadius:       6
+    readonly property int   iconColumnWidth: 20
+    readonly property int   iconSize:        18
+    readonly property real  hPadding:        10
+    readonly property real  menuPadding:      6
+    readonly property real  outerPadding:     Appearance.sizes.elevationMargin
+
     signal menuClosed()
-    signal requestModelCheck()
 
     color: "transparent"
-
-    readonly property int itemHeight:      32
-    readonly property int itemRadius:       6
-    readonly property int iconColumnWidth: 20
-    readonly property int iconSize:        18
-    readonly property real hPadding:         8
-    readonly property real menuPadding:      4
-    readonly property real outerPadding:     Appearance.sizes.elevationMargin
 
     implicitWidth:  popupBackground.implicitWidth  + root.outerPadding * 2
     implicitHeight: popupBackground.implicitHeight + root.outerPadding * 2
 
-    function open()  { root.visible = true; }
+    function open()  {
+        root.visible = true;
+    }
+
     function close() {
         root.visible = false;
         root.menuClosed();
@@ -40,7 +46,7 @@ PopupWindow {
 
     Timer {
         id: dismissGuard
-        interval: 180
+        interval: 50
         repeat: false
         onTriggered: {
             if (root.visible)
@@ -119,16 +125,18 @@ PopupWindow {
                 }
                 spacing: 0
 
+                // MenuItem helper component defined inline
                 component MenuItem : RippleButton {
                     id: itemRoot
                     property string menuIcon: ""
                     property string label: ""
+                    property string sublabel: ""
                     property color color: TuiStyle.fg
 
                     buttonRadius:      root.itemRadius
                     horizontalPadding: root.hPadding
-                    topPadding:        0
-                    bottomPadding:     0
+                    topPadding:        4
+                    bottomPadding:     4
                     implicitHeight:    root.itemHeight
                     height:            root.itemHeight
                     Layout.fillWidth:  true
@@ -139,7 +147,7 @@ PopupWindow {
                     borderWidth:        0
 
                     contentItem: RowLayout {
-                        spacing: 8
+                        spacing: 10
                         Item {
                             Layout.preferredWidth:  root.iconColumnWidth
                             Layout.preferredHeight: root.iconColumnWidth
@@ -152,39 +160,66 @@ PopupWindow {
                                 visible:  itemRoot.menuIcon !== ""
                             }
                         }
-                        StyledText {
+                        ColumnLayout {
                             Layout.fillWidth: true
-                            text:             itemRoot.label
-                            color:            itemRoot.color
-                            elide:            Text.ElideRight
-                            font {
-                                pixelSize: 13
-                                weight:    Font.Normal
+                            spacing: 1
+                            StyledText {
+                                Layout.fillWidth: true
+                                text:             itemRoot.label
+                                color:            itemRoot.color
+                                elide:            Text.ElideRight
+                                font {
+                                    pixelSize: 13
+                                    weight:    Font.Medium
+                                }
+                            }
+                            StyledText {
+                                Layout.fillWidth: true
+                                text:             itemRoot.sublabel
+                                color:            TuiStyle.fgMuted
+                                elide:            Text.ElideRight
+                                visible:          itemRoot.sublabel !== ""
+                                font {
+                                    pixelSize: 10
+                                    weight:    Font.Normal
+                                }
                             }
                         }
                     }
                 }
 
+                // Separator helper component defined inline
+                component Separator : Rectangle {
+                    Layout.fillWidth:    true
+                    implicitHeight:      1
+                    color:               TuiStyle.line
+                    opacity:             TuiStyle.dividerOpacity
+                    Layout.topMargin:    4
+                    Layout.bottomMargin: 4
+                }
+
                 MenuItem {
                     menuIcon: NerdIconMap.cpu
-                    label: "Offline Model Check"
+                    label: "离线模型管理 & 检测 (TUI)"
+                    sublabel: "SenseVoice 模型下载、检测与重装"
                     onClicked: {
-                        root.requestModelCheck();
+                        Quickshell.execDetached([root.shareDir + "/omd-launch-settings-voice-tui"]);
                         root.close();
                     }
                 }
 
+                Separator {}
+
                 MenuItem {
                     menuIcon: NerdIconMap.keyboard
-                    label: "Hotkey Config"
+                    label: "配置文件 / 快捷键设置"
+                    sublabel: "编辑 ~/.config/voice_bindings.txt"
                     onClicked: {
-                        Quickshell.execDetached(["bash", "-c",
-                            `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/omd-edit-voice-bindings"`]);
+                        Quickshell.execDetached([root.shareDir + "/omd-edit-voice-bindings"]);
                         root.close();
                     }
                 }
             }
         }
     }
-
 }
