@@ -12,6 +12,7 @@ import Quickshell.Io
 PopupWindow {
     id: root
 
+
     property string shareDir: FileUtils.trimFileProtocol(Qt.resolvedUrl("..")) + "/bin"
     signal closed()
 
@@ -35,19 +36,21 @@ PopupWindow {
 
     function open() {
         root.visible = true;
-        GlobalStates.voicePopupOpen = true;
+        GlobalStates.barPopupType = "voiceModel";
     }
     function close() {
+        if (GlobalStates.barPopupType === "voiceModel")
+            GlobalStates.barPopupType = "";
         root.visible = false;
-        GlobalStates.voicePopupOpen = false;
         root.closed();
     }
 
     Component.onCompleted: {
-        root.visible = true;
-        GlobalStates.voicePopupOpen = true;
+        open();
         refreshAll();
     }
+
+
     Component.onDestruction: {
         dismissGuard.stop();
         GlobalFocusGrab.removeDismissable(root);
@@ -124,7 +127,7 @@ PopupWindow {
 
     Timer {
         id: dismissGuard
-        interval: 180
+        interval: 50
         repeat: false
         onTriggered: {
             if (root.visible)
@@ -134,14 +137,13 @@ PopupWindow {
 
     onVisibleChanged: {
         if (visible) {
-            GlobalStates.voicePopupOpen = true;
             dismissGuard.restart();
         } else {
-            GlobalStates.voicePopupOpen = false;
             dismissGuard.stop();
             GlobalFocusGrab.removeDismissable(root);
         }
     }
+
 
     Connections {
         target: GlobalFocusGrab
@@ -149,6 +151,16 @@ PopupWindow {
             root.close()
         }
     }
+
+    Connections {
+        target: GlobalStates
+        function onBarPopupTypeChanged() {
+            if (GlobalStates.barPopupType !== "voiceModel" && root.visible) {
+                root.close();
+            }
+        }
+    }
+
 
     MouseArea {
         anchors.fill: parent

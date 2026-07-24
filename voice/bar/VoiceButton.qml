@@ -66,8 +66,13 @@ Item {
 
         // Right click: show model status popup
         altAction: function(event) {
-            statusPopupLoader.active = true;
+            if (GlobalStates.barPopupType === "voiceModel") {
+                GlobalStates.barPopupType = "";
+            } else {
+                statusPopupLoader.active = true;
+            }
         }
+
     }
 
     // Pulse ring for recording/transcribing
