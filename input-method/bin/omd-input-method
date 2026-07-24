@@ -5,8 +5,7 @@
 Backend detection: fcitx5 (via fcitx5-remote + gdbus Rime D-Bus), ibus (future).
 Schema list is loaded from the user config at
   $SUMIKA_SHELL_CONFIG_HOME/input-method/schemas.json
-falling back to the repo default at
-  $OMD_ROOT/defaults/config/input-method/schemas.json
+falling back to the extension's bundled config/schemas.json.
 """
 
 import json
@@ -29,16 +28,13 @@ def config_home():
     )
 
 
-def omd_root():
-    return os.environ.get("OMD_ROOT") or os.environ.get("HOME", "") + "/.config/omd"
-
-
 def schemas_file_path():
-    """User schemas.json if it exists, else the repo default template."""
     user_path = os.path.join(config_home(), "input-method", "schemas.json")
     if os.path.isfile(user_path):
         return user_path
-    return os.path.join(omd_root(), "defaults", "config", "input-method", "schemas.json")
+    # Fall back to the schemas bundled with the extension
+    return os.path.join(os.path.dirname(os.path.dirname(__file__)), "config", "schemas.json")
+
 
 
 def load_schemas():

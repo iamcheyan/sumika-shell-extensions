@@ -11,7 +11,6 @@ import Quickshell
 /// when the screenshot module is enabled.
 Item {
     Component.onCompleted: {
-        var omdRoot = Quickshell.env("OMD_REPO_ROOT") || ""
         ActionManager.register("screenshot.freeze", "screenshot", "Freeze screenshot overlays", {
             type: "qml",
             call: function(p) { GlobalStates.screenshotActive = true }
@@ -24,17 +23,17 @@ Item {
 
         ActionManager.register("screenshot.capture", "screenshot", "Take region screenshot", {
             type: "process",
-            command: [omdRoot + "/bin/omd-screenshot", "screenshot"]
+            command: ["omd-screenshot", "screenshot"]
         }, {description: "Capture a selected screen region"})
 
         ActionManager.register("screenshot.capture-edit", "screenshot", "Take region screenshot and edit", {
             type: "process",
-            command: [omdRoot + "/bin/omd-screenshot", "edit"]
+            command: ["omd-screenshot", "edit"]
         }, {description: "Capture a region and open in editor"})
 
         ActionManager.register("screenshot.capture-ocr", "screenshot", "Extract text from screenshot", {
             type: "process",
-            command: [omdRoot + "/bin/omd-screenshot", "ocr"]
+            command: ["omd-screenshot", "ocr"]
         }, {description: "OCR text from a screen region"})
     }
 }

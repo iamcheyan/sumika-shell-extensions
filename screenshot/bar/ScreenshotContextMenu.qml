@@ -181,10 +181,10 @@ PopupWindow {
                 }
 
                 MenuItem {
-                    menuIcon: NerdIconMap.crop
+                    menuIcon: NerdIconMap.screenshot
                     label: "Capture Area"
                     onClicked: {
-                        Quickshell.execDetached([`${Quickshell.env("OMD_REPO_ROOT")}/bin/omd-screenshot`, "screenshot"]);
+                        Quickshell.execDetached(["omd-screenshot", "screenshot"]);
                         root.close();
                     }
                 }
@@ -193,7 +193,7 @@ PopupWindow {
                     menuIcon: NerdIconMap.edit
                     label: "Capture & Edit"
                     onClicked: {
-                        Quickshell.execDetached([`${Quickshell.env("OMD_REPO_ROOT")}/bin/omd-screenshot`, "edit"]);
+                        Quickshell.execDetached(["omd-screenshot", "edit"]);
                         root.close();
                     }
                 }
@@ -235,21 +235,20 @@ PopupWindow {
                     menuIcon: NerdIconMap.video
                     label: "Record Screen"
                     onClicked: {
-                        Quickshell.execDetached([Directories.recordScriptPath]);
+                        Quickshell.execDetached(["omd-screenshot", "record"]);
+                        root.close();
+                    }
+                }
+                MenuItem {
+                    menuIcon: NerdIconMap.textDocument
+                    label: "OCR Screenshot"
+                    onClicked: {
+                        Quickshell.execDetached(["omd-screenshot", "ocr"]);
                         root.close();
                     }
                 }
 
-                MenuItem {
-                    menuIcon: NerdIconMap.desktop
-                    label: "Display Settings"
-                    onClicked: {
-                        root.close();
-                        Quickshell.execDetached([
-                            `${Quickshell.env("OMD_REPO_ROOT")}/bin/omd-settings`, "open", "display"
-                        ]);
-                    }
-                }
+
             }
         }
     }

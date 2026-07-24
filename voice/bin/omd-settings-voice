@@ -1,23 +1,26 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-OMD_ROOT="${OMD_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-export OMD_ROOT
-
-BINDINGS_FILE="$HOME/.config/voice_bindings.txt"
-CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/omd-voice"
-VENV_DIR="${OMD_VOICE_VENV:-$CACHE_DIR/venv}"
-MODEL_DIR="$CACHE_DIR/sense-voice-small-int8"
-SOCKET="/tmp/omd-voice.sock"
-REC_PID_PATH="${OMD_VOICE_REC_PID:-/tmp/omd-voice-rec.pid}"
-LAUNCH_TUI="$OMD_ROOT/bin/omd-launch-tui"
-KEY_CAPTURE="$OMD_ROOT/scripts/key-test-launcher"
-VOICE_BIND_TUI="$OMD_ROOT/scripts/voice-bind-tui"
-VOICE_EDIT_BINDINGS="$OMD_ROOT/bin/omd-edit-voice-bindings"
-VOICE_DIAGNOSE="$OMD_ROOT/scripts/voice-diagnose"
-VOICE_TEST_TUI="$OMD_ROOT/scripts/voice-test-tui"
-VOICE_SETUP="$OMD_ROOT/bin/omarchy-voice-setup"
-VOICE_DOWNLOAD="$OMD_ROOT/bin/omarchy-voice-download"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# Tool resolution: prefer the extension's own bin/, then PATH
+_find_tool() {
+    local tool="$1"
+    if [ -x "$SCRIPT_DIR/$tool" ]; then
+        echo "$SCRIPT_DIR/$tool"
+    elif command -v "$tool" >/dev/null 2>&1; then
+        echo "$tool"
+    else
+        echo "$SCRIPT_DIR/$tool"
+    fi
+}
+LAUNCH_TUI="$(_find_tool omd-launch-tui)"
+KEY_CAPTURE="$(command -v key-test-launcher 2>/dev/null || echo "$SCRIPT_DIR/key-test-launcher")"
+VOICE_BIND_TUI="$(command -v voice-bind-tui 2>/dev/null || echo "$SCRIPT_DIR/voice-bind-tui")"
+VOICE_EDIT_BINDINGS="$(_find_tool omd-edit-voice-bindings)"
+VOICE_DIAGNOSE="$(command -v voice-diagnose 2>/dev/null || echo "$SCRIPT_DIR/voice-diagnose")"
+VOICE_TEST_TUI="$(command -v voice-test-tui 2>/dev/null || echo "$SCRIPT_DIR/voice-test-tui")"
+VOICE_SETUP="$(_find_tool omarchy-voice-setup)"
+VOICE_DOWNLOAD="$(_find_tool omarchy-voice-download)"
 
 # Runtime state directory. Holds state.json (ephemeral phase + progress) and
 # recent.json (last N transcription results). The TUI polls `status` to read.
@@ -577,7 +580,7 @@ test_tui() {
     echo "Recording completed. Transcribing..."
     if [[ -f "$test_wav" ]]; then
       local text
-      text="$("$OMD_ROOT/bin/omarchy-voice-transcribe" "$test_wav" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("text",""))' 2>/dev/null || true)"
+      text="$("$SCRIPT_DIR/omarchy-voice-transcribe" "$test_wav" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("text",""))' 2>/dev/null || true)"
       if [[ -n "$text" ]]; then
         echo "Transcription result: \"$text\""
       else
@@ -645,18 +648,18 @@ PY
 # script manages the parecord PID at REC_PID_PATH, which recording_active()
 # reads to render the recording state.
 record_start() {
-  "$OMD_ROOT/bin/omarchy-voice-record" start >/dev/null 2>&1 &
+  "$SCRIPT_DIR/omarchy-voice-record" start >/dev/null 2>&1 &
   kv result "record-started"
 }
 
 record_stop() {
-  "$OMD_ROOT/bin/omarchy-voice-record" stop >/dev/null 2>&1 || true
+  "$SCRIPT_DIR/omarchy-voice-record" stop >/dev/null 2>&1 || true
   # Transcribe the captured wav and always push a recent entry (empty text
   # means no speech detected) so the TUI can leave the "transcribing" phase.
   local wav="/tmp/omd-voice-rec.wav"
   local text=""
   if [[ -f "$wav" ]]; then
-    text="$("$OMD_ROOT/bin/omarchy-voice-transcribe" "$wav" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("text",""))' 2>/dev/null || true)"
+    text="$("$SCRIPT_DIR/omarchy-voice-transcribe" "$wav" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("text",""))' 2>/dev/null || true)"
   fi
   push_recent "$text"
   kv text "$text"
@@ -665,7 +668,7 @@ record_stop() {
 
 # record-cancel stops the recorder without transcription (Esc/Q on the trial).
 record_cancel() {
-  "$OMD_ROOT/bin/omarchy-voice-record" stop >/dev/null 2>&1 || true
+  "$SCRIPT_DIR/omarchy-voice-record" stop >/dev/null 2>&1 || true
   kv result "record-cancelled"
 }
 

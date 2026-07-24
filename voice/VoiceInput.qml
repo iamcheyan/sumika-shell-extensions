@@ -38,9 +38,8 @@ Singleton {
         return dir
     }
 
-    // paste-at-cursor is a core OMD utility (share/bin/omarchy-paste-at-cursor), not voice-specific
-    readonly property string pasteScript: FileUtils.trimFileProtocol(
-        `${Directories.root}/bin/omd-paste-at-cursor`)
+    // paste-at-cursor lives in the extension's own bin/ dir
+    readonly property string pasteScript: `${root.shareDir}/omd-paste-at-cursor`
 
     // 录音开始时记录焦点窗口，转写完成后贴回该窗口（避免转写期间焦点跑到顶栏）。
     property string focusedWindowClass: ""
@@ -79,11 +78,11 @@ Singleton {
     }
     onStateChanged: {
         if (state === "recording") {
-            Quickshell.execDetached(["hyprctl", "eval", "o.bind(\"escape\", \"Cancel voice recording\", \"qs -p " + Directories.root + "/apps/omd-bar ipc call action call voice.cancel\")"])
+            // Bind Escape to cancel via file flag (self-contained, no bar IPC needed)
+            Quickshell.execDetached(["hyprctl", "eval", "o.bind(\"escape\", \"Cancel voice recording\", \"touch /tmp/omd-voice-cancel\")"])
         } else {
             Quickshell.execDetached(["hyprctl", "eval", "hl.unbind(\"escape\")"])
         }
-
         if (state === "success") {
             successResetTimer.restart()
         } else if (state === "error") {
@@ -119,6 +118,8 @@ Singleton {
         running: root.state === "recording"
         onTriggered: {
             root.recordingDuration += 0.1
+            // Check for cancel signal from Escape keybinding
+            cancelFileCheckProc.running = true
             if (root.recordingDuration >= root.maxRecordingDuration) {
                 root.stopRecording()
                 root.notify("⚠️ 语音输入超时", `已达到最大录音时间 ${root.maxRecordingDuration} 秒，开始自动转写…`, "dialog-warning")
@@ -126,6 +127,18 @@ Singleton {
         }
     }
 
+    // ── 取消信号检测 ──
+    Process {
+        id: cancelFileCheckProc
+        running: false
+        command: ["test", "-f", "/tmp/omd-voice-cancel"]
+        onExited: (code, status) => {
+            if (code === 0) {
+                Quickshell.execDetached(["rm", "-f", "/tmp/omd-voice-cancel"])
+                root.cancel()
+            }
+        }
+    }
     // ── 模型信息刷新 ──
     function refreshModelInfo() {
         modelInfoProc.running = true

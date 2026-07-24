@@ -12,11 +12,7 @@
 
 set -eu
 
-OMD_ROOT="${OMD_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../.." && pwd)}"
-if [ -f "$OMD_ROOT/scripts/omd-path.sh" ]; then
-    # shellcheck source=/dev/null
-    . "$OMD_ROOT/scripts/omd-path.sh"
-fi
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)"
 
 PAYLOAD_MODE="clipboard"
 PAYLOAD_SOURCE=""

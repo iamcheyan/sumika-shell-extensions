@@ -272,13 +272,8 @@ PanelWindow {
             return;
         }
         if (root.isRecording) {
-            // Recording captures the live compositor output, so hide bar
-            // overlays before showing the selector.
-            const barDir = (Quickshell.env("OMD_REPO_ROOT") ?? "") + "/apps/omd-bar";
-            Quickshell.execDetached([
-                "qs", "-p", barDir,
-                "ipc", "call", "menus", "close"
-            ]);
+            // Recording captures the live compositor output, so show the
+            // selector overlay directly.
             root.visible = true;
             root.captureReady = true;
         } else {
@@ -317,11 +312,6 @@ PanelWindow {
             // appeared yet.
             if (root.closeMenusOnShow) {
                 root.closeMenusOnShow = false;
-                const barDir = (Quickshell.env("OMD_REPO_ROOT") ?? "") + "/apps/omd-bar";
-                Quickshell.execDetached([
-                    "qs", "-p", barDir,
-                    "ipc", "call", "menus", "close"
-                ]);
             }
         }
     }
