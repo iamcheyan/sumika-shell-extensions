@@ -4,6 +4,7 @@ import qs.modules.bar
 import qs.modules.common
 import qs.modules.common.widgets
 import QtQuick
+import Quickshell
 import QtQuick.Layouts
 
 Item {
@@ -61,6 +62,11 @@ Item {
             GlobalStates.barPopupType = GlobalStates.barPopupType === "voice"
                 ? ""
                 : "voice";
+        }
+
+        // Right click: open context menu
+        altAction: function(event) {
+            menuLoader.active = true;
         }
     }
 
@@ -140,5 +146,25 @@ Item {
     onIsErrorChanged: {
         if (root.isError)
             recordingBlink.start();
+    }
+    // Context menu for right-click
+    Loader {
+        id: menuLoader
+        active: false
+        source: "VoiceContextMenu.qml"
+        onLoaded: {
+            item.anchor = {
+                window: root.QsWindow.window,
+                item: button,
+                gravity: Config.options.bar.vertical
+                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
+                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom),
+                edges: Config.options.bar.vertical
+                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
+                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom)
+            };
+            item.open();
+            item.menuClosed.connect(() => menuLoader.active = false);
+        }
     }
 }

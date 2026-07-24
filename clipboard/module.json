@@ -1,0 +1,20 @@
+{
+  "schemaVersion": 2,
+  "id": "clipboard",
+  "name": "剪贴板历史",
+  "version": "2.0.0",
+  "actionsProvider": "module-actions.qml",
+  "kind": "shared",
+  "description": "基于 cliphist 的历史记录管理",
+  "contributes": {
+    "widgets": [
+      {
+        "id": "clipboard-bar-button",
+        "name": "Clipboard",
+        "slot": "right",
+        "component": "bar/ClipboardButton.qml",
+        "order": 35
+      }
+    ]
+  }
+}
