@@ -178,7 +178,6 @@ Item {
             a.edges = Config.options.bar.vertical
                 ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
                 : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
-            a.margins = 4;
             item.open();
             item.menuClosed.connect(() => menuLoader.active = false);
         }
