@@ -7,7 +7,6 @@
   "actionsProvider": "module-actions.qml",
   "description": "Voice input and speech-to-text",
   "contributes": {
-    "services": ["voice-input"],
     "widgets": [
       {"id": "voice-bar-button", "name": "Voice", "slot": "right", "component": "bar/VoiceButton.qml", "order": 55}
     ],
