@@ -165,12 +165,19 @@ Singleton {
     }
 
     // Fast polling on startup until the backend becomes available, then
-    // fall back to slow periodic refresh to catch manual schema changes.
+    // gently slower but still responsive to transient failures.
+    // When available drops to false we restart the timer immediately so
+    // the fast 300ms interval takes effect *now*, not after the current
+    // 1000ms tick fires.
     Timer {
         id: pollTimer
-        interval: root.available ? 2000 : 300
+        interval: root.available ? 1000 : 300
         repeat: true
         running: true
         onTriggered: root.refresh()
+    }
+
+    onAvailableChanged: {
+        if (!root.available) pollTimer.restart();
     }
 }
