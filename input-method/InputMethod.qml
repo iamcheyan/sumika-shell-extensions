@@ -164,20 +164,15 @@ Singleton {
         onTriggered: root.refresh()
     }
 
-    // Fast polling on startup until the backend becomes available, then
-    // gently slower but still responsive to transient failures.
-    // When available drops to false we restart the timer immediately so
-    // the fast 300ms interval takes effect *now*, not after the current
-    // 1000ms tick fires.
+    // Transient failure recovery: when fcitx5 is unavailable (restarting,
+    // D-Bus hiccup, etc.), poll slowly until it recovers.  When available
+    // is true the timer is stopped — no background polling at all.
     Timer {
-        id: pollTimer
-        interval: root.available ? 1000 : 300
+        id: recoveryTimer
+        interval: 3000
         repeat: true
-        running: true
+        running: !root.available
         onTriggered: root.refresh()
     }
 
-    onAvailableChanged: {
-        if (!root.available) pollTimer.restart();
-    }
 }

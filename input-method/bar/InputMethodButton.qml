@@ -7,6 +7,7 @@ import QtQuick.Layouts
 BarModuleButton {
     id: root
 
+    moduleId: "input-method"
     icon: NerdIconMap.keyboard
     iconColor: Appearance.colors.colBarText
     visible: Config.options.inputMethod.enabled && InputMethodMod.InputMethod.available

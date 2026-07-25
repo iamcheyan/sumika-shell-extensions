@@ -6,6 +6,7 @@ import Quickshell
 
 BarModuleButton {
     icon: NerdIconMap.contentPaste
+    moduleId: "clipboard"
     active: false
     onClicked: {
         if (Date.now() - GlobalStates.barPopupDismissedAt < 200) return;
