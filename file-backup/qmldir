@@ -1,0 +1,5 @@
+module qs.modules.filebackup
+singleton FileBackup 1.0 FileBackup.qml
+BackupButton 1.0 bar/BackupButton.qml
+BackupPopupSection 1.0 popup/BackupPopupSection.qml
+BackupPage 1.0 settings/BackupPage.qml

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "id": "filebackup",
+  "name": "文件备份与分发",
+  "version": "2.0.0",
+  "kind": "shared",
+  "actionsProvider": "module-actions.qml",
+  "description": "基于 rsync / Samba 的配置与数据备份机制",
+  "contributes": {
+    "widgets": [],
+    "launchers": [
+      {
+        "id": "sumika-file-backup",
+        "name": "Sumika File Backup",
+        "comment": "Configure and manage SMB file backups and sync",
+        "exec": "omd-launch-settings-backup-tui",
+        "icon": "icon.png",
+        "categories": ["System", "FileTools"],
+        "startupWmClass": "org.omd.backuptui"
+      }
+    ],
+    "services": [],
+    "popupSections": [
+      {
+        "id": "backup-popup",
+        "type": "backup",
+        "component": "popup/BackupPopupSection.qml"
+      }
+    ],
+    "settingsPages": [
+      {
+        "id": "backup",
+        "title": "文件备份",
+        "component": "settings/BackupPage.qml",
+        "icon": "cloud_upload",
+        "order": 60
+      }
+    ]
+  }
+}

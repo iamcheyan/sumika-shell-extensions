@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 2,
+  "id": "windowsvm",
+  "name": "Windows 虚拟机",
+  "version": "2.0.0",
+  "kind": "shared",
+  "actionsProvider": "module-actions.qml",
+  "description": "基于 QEMU / WinApps / LookingGlass 的快捷管理与引导",
+  "contributes": {
+    "widgets": [],
+    "launchers": [
+      {
+        "id": "sumika-windows-vm",
+        "name": "Sumika Windows VM",
+        "comment": "Manage Windows VM — install, run, connect via RDP or web console",
+        "exec": "omd-launch-settings-windows-tui",
+        "icon": "icon.png",
+        "categories": ["System", "Emulator"],
+        "startupWmClass": "org.omd.windowsvmtui"
+      }
+    ],
+    "services": [],
+    "popupSections": [
+      {
+        "id": "windows-vm-popup",
+        "type": "windows-vm",
+        "component": "popup/WindowsVmPopup.qml"
+      }
+    ],
+    "settingsPages": [
+      {
+        "id": "windows-vm",
+        "title": "Windows 虚拟机",
+        "component": "settings/WindowsVmPage.qml",
+        "icon": "desktop_windows",
+        "order": 70
+      }
+    ]
+  }
+}

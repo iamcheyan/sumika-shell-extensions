@@ -1,6 +1,6 @@
 import QtQuick
 
-import qs.modules.inputMethod as InputMethodMod
+import qs.modules.inputmethod as InputMethodMod
 import qs.core.runtime
 ///
 /// Registers QML-callback actions for cycling the input method schema
@@ -9,7 +9,7 @@ import qs.core.runtime
 Item {
     Component.onCompleted: {
         var im = InputMethodMod.InputMethod
-        ActionManager.register("input-method.cycle", "input-method", "Cycle input method schema", {
+        ActionManager.register("input-method.cycle", "inputmethod", "Cycle input method schema", {
             type: "qml",
             call: function(p) {
                 var dir = 1

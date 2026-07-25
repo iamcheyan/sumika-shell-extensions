@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "id": "input-method",
+  "id": "inputmethod",
   "name": "输入法",
   "version": "2.0.0",
   "kind": "shared",

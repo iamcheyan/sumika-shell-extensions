@@ -1,0 +1,44 @@
+#!/usr/bin/env bash
+# omd-launch-settings-windows-tui — Launch the Windows VM settings TUI
+# Follows the same unified TUI framework as keyboard-remap, wifi, bluetooth.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TUI_SCRIPT="${SCRIPT_DIR}/omd-settings-vm-tui"
+
+if [[ ! -f "$TUI_SCRIPT" ]]; then
+  echo "omd-settings-vm-tui not found at $TUI_SCRIPT" >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 not found" >&2
+  exit 1
+fi
+
+run_tui() {
+  exec python3 "$TUI_SCRIPT"
+}
+
+# Prefer xdg-terminal-exec with a dedicated app-id for Hyprland floating rules.
+if command -v uwsm-app >/dev/null 2>&1 && command -v xdg-terminal-exec >/dev/null 2>&1; then
+  exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.omd.windowsvmtui -e python3 "$TUI_SCRIPT"
+fi
+
+if command -v xdg-terminal-exec >/dev/null 2>&1; then
+  exec xdg-terminal-exec --app-id=org.omd.windowsvmtui -e python3 "$TUI_SCRIPT"
+fi
+
+# foot / kitty / alacritty / gnome-terminal / konsole fallbacks
+for term in foot kitty alacritty gnome-terminal konsole; do
+  if command -v "$term" >/dev/null 2>&1; then
+    case "$term" in
+      gnome-terminal) exec gnome-terminal -- python3 "$TUI_SCRIPT" ;;
+      konsole)        exec konsole -e python3 "$TUI_SCRIPT" ;;
+      *)              exec "$term" -e python3 "$TUI_SCRIPT" ;;
+    esac
+  fi
+done
+
+run_tui

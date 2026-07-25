@@ -22,8 +22,17 @@ import sys
 import os
 import time
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-import omd_tui_shared as S
+# Point OMD_ROOT at this extension's root so the shared TUI framework's
+# run_cmd resolves scripts in our own bin/ directory.
+_EXT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if os.path.isfile(os.path.join(_EXT_ROOT, "module.json")):
+    os.environ["OMD_ROOT"] = _EXT_ROOT
+
+_omd_bin = os.path.join(
+    os.environ.get("SUMIKA_SHELL_ROOT") or os.path.expanduser("~/.config/omd"), "bin")
+if _omd_bin not in sys.path:
+    sys.path.insert(0, _omd_bin)
+import omd_tui_framework as S
 
 FRIENDLY_MAP = {
     "ALT + A": "Alt + A", "code:472": "Globe (Fn)", "XF86Tools": "F13 / Tools",

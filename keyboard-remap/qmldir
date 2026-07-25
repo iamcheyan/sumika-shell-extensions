@@ -1,0 +1,5 @@
+module qs.modules.keyboardremap
+singleton KeyboardRemap 1.0 KeyboardRemap.qml
+KeyboardPopup 1.0 popup/KeyboardPopup.qml
+KeyboardRemapPage 1.0 settings/KeyboardRemapPage.qml
+KeyboardEditorOverlay 1.0 settings/KeyboardEditorOverlay.qml

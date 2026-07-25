@@ -1,5 +1,5 @@
 import qs
-import qs.modules.inputMethod as InputMethodMod
+import qs.modules.inputmethod as InputMethodMod
 import qs.modules.common
 import qs.modules.common.widgets
 import QtQuick
@@ -7,7 +7,7 @@ import QtQuick.Layouts
 BarModuleButton {
     id: root
 
-    moduleId: "input-method"
+    moduleId: "inputmethod"
     icon: NerdIconMap.keyboard
     iconColor: Appearance.colors.colBarText
     visible: Config.options.inputMethod.enabled && InputMethodMod.InputMethod.available

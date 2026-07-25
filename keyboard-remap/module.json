@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 2,
+  "id": "keyboardremap",
+  "name": "Keyboard Remapping",
+  "version": "1.0.0",
+  "kind": "shared",
+  "actionsProvider": "module-actions.qml",
+  "description": "Keyboard device profiles and key mapping",
+  "contributes": {
+    "launchers": [
+      {
+        "id": "sumika-keyboard-remap",
+        "name": "Sumika Keyboard Remap",
+        "comment": "Configure keyboard remapping (keyd) — remap keys, manage profiles, and set function row behavior",
+        "exec": "omd-launch-keyboard-tui",
+        "icon": "icon.png",
+        "categories": ["Settings", "HardwareSettings"],
+        "startupWmClass": "org.omd.keyboardtui"
+      }
+    ],
+    "popupSections": [
+      {"id": "keyboard-popup", "type": "keyboard", "name": "Keyboard", "component": "popup/KeyboardPopup.qml"}
+    ],
+    "settingsPages": [
+      {"id": "keyremap", "title": "Keyboard Remap", "component": "settings/KeyboardRemapPage.qml", "icon": "keyboard", "order": 60}
+    ]
+  }
+}

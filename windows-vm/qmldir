@@ -1,0 +1,5 @@
+module qs.modules.windowsvm
+singleton WindowsVm 1.0 WindowsVm.qml
+WindowsVmButton 1.0 bar/WindowsVmButton.qml
+WindowsVmPopup 1.0 popup/WindowsVmPopup.qml
+WindowsVmPage 1.0 settings/WindowsVmPage.qml
