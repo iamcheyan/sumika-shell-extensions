@@ -8,7 +8,6 @@ import qs.modules.common.functions
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import qs.modules.popup-components
 
 PopupColumn {
     id: voicePanel
@@ -162,8 +161,11 @@ PopupColumn {
                 }
             }
 
-            ActionRow {
-                PopupActionButton {
+            RowLayout {
+                Layout.fillWidth: true
+                spacing: 8
+
+                PopupIconButton {
                     label: "COPY TEXT"
                     enabledState: vi.lastTranscription.length > 0
                     onClicked: {
@@ -172,7 +174,7 @@ PopupColumn {
                         vi.notify("Copied", vi.lastTranscription, "edit-copy");
                     }
                 }
-                PopupActionButton {
+                PopupIconButton {
                     label: "PASTE"
                     enabledState: vi.lastTranscription.length > 0
                     onClicked: {
@@ -228,7 +230,7 @@ PopupColumn {
                             onClicked: {
                                 Quickshell.execDetached(["bash", "-c",
                                     `printf '%s' '${StringUtils.shellSingleQuoteEscape(modelData.text)}' | wl-copy`]);
-                                root.close();
+                                GlobalStates.barPopupType = "";
                             }
                         }
 
@@ -260,8 +262,11 @@ PopupColumn {
         }
     }
 
-    ActionRow {
-        PopupActionButton {
+    RowLayout {
+        Layout.fillWidth: true
+        spacing: 8
+
+        PopupIconButton {
             label: vi.state === "setup" ? "Setup" : "Test"
             onClicked: {
                 if (vi.state === "setup") {
@@ -269,10 +274,10 @@ PopupColumn {
                 } else {
                     vi.testRecording();
                 }
-                root.close();
+                GlobalStates.barPopupType = "";
             }
         }
-        PopupActionButton {
+        PopupIconButton {
             label: "Check State"
             onClicked: {
                 vi.checkState();
@@ -280,7 +285,7 @@ PopupColumn {
                 vi.refreshDaemonStatus();
             }
         }
-        PopupActionButton {
+        PopupIconButton {
             label: "Clear History"
             visible: vi.history.length > 0
             onClicked: vi.clearHistory()
@@ -291,7 +296,7 @@ PopupColumn {
         Layout.fillWidth: true
         label: "Voice Settings…"
         onClicked: {
-            root.close();
+            GlobalStates.barPopupType = "";
             Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/omd-settings`, "open", "voice"]);
         }
     }

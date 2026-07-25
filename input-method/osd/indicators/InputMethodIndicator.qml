@@ -1,4 +1,4 @@
-import qs.services as Services
+import qs.modules.inputMethod as InputMethodMod
 import qs.modules.common
 import qs.modules.common.widgets
 import QtQuick
@@ -7,7 +7,8 @@ import QtQuick.Layouts
 Item {
     id: root
 
-    readonly property string selectedSchema: Services.InputMethod.pendingSchema || Services.InputMethod.schema
+    readonly property var inputMethod: InputMethodMod.InputMethod
+    readonly property string selectedSchema: inputMethod.pendingSchema || inputMethod.schema
 
     implicitWidth: 360 + Appearance.sizes.elevationMargin * 2
     implicitHeight: popupBg.implicitHeight + Appearance.sizes.elevationMargin * 2
@@ -78,7 +79,7 @@ Item {
             }
 
             Repeater {
-                model: Services.InputMethod.schemas
+                model: inputMethod.schemas
 
                 delegate: Rectangle {
                     id: schemaRow
