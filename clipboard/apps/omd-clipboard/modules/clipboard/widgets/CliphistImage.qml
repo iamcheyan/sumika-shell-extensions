@@ -16,9 +16,10 @@ Rectangle {
     readonly property var imageMeta: {
         if (!root.entry)
             return ({ num: 0, w: 0, h: 0 });
-        const m = root.entry.match(/^(\d+)\t\[\[.*?(\d+)x(\d+).*?\]\]$/);
+        const m = `${root.entry}`.match(/^(\d+)\t\[\[.*?(\d+)x(\d+).*?\]\]/);
         return m ? ({ num: parseInt(m[1]), w: parseInt(m[2]), h: parseInt(m[3]) }) : ({ num: 0, w: 0, h: 0 });
     }
+
     readonly property int entryNumber: imageMeta.num
     readonly property int imageWidth: imageMeta.w
     readonly property int imageHeight: imageMeta.h

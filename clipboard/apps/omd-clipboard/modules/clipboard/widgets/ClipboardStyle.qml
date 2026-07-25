@@ -7,7 +7,7 @@ Singleton {
     id: root
 
     readonly property string themePath: `${Quickshell.env("HOME")}/.local/state/sumika-shell/theme/current/quickshell.json`
-    readonly property color fg: themeJson.backgroundText || "#f4f4f4"
+    readonly property color fg: "#ffffff"
     readonly property color dim: "#a8a8a8"
     readonly property color muted: "#777777"
     readonly property color bg: themeJson.background || "#050505"

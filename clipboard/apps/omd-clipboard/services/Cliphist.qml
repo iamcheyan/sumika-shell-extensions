@@ -10,12 +10,14 @@ Singleton {
     id: root
     property string cliphistBinary: "cliphist"
     property string pasteCommand: "OMD_PASTE_SOURCE=clipboard OMD_PASTE_DELAY=0.05 omd-paste-at-cursor"
+    property string pasteHelper: "omd-clipboard-paste"
     property int maxEntries: 40
     property list<string> entries: []
     property string lastPasteEntry: ""
     property double lastPasteAt: 0
     readonly property var reEntryPrefix: /^\s*\S+\s+/
-    readonly property var reImageEntry: /^\d+\t\[\[.*binary data.*\d+x\d+.*\]\]$/
+    readonly property var reImageEntry: /^\d+\t\[\[.*binary data.*\]\]/i
+
     readonly property var reInvisibleChars: /[\s\u0000-\u001f\u007f-\u009f\u00ad\u034f\u061c\u115f\u1160\u17b4\u17b5\u180b-\u180f\u200b-\u200f\u202a-\u202e\u2060-\u206f\u2800\u3000\u3164\ufe00-\ufe0f\ufeff\uffa0]/g
     readonly property var reEntryNumber: /^(\d+)\t/
     readonly property var preparedEntries: entries.map(a => {
@@ -60,6 +62,11 @@ Singleton {
             const payload = entryPayload(entry)
             if (!entryHasVisibleContent(entry)) continue
             if (payload.indexOf("/tmp/omd-clip-") !== -1) continue
+            // Filter stale probe strings left by external debugging sessions
+            // (e.g. __sumika_clip_text_hold_...__). These are not real
+            // clipboard content; they were written to the Wayland clipboard
+            // by diagnostic tools and captured by the watcher. Drop them.
+            if (payload.indexOf("__sumika_") !== -1) continue
             if (seen.has(payload)) continue
             seen.add(payload)
             filtered.push(entry)
@@ -123,11 +130,7 @@ Singleton {
     function pasteImagePath(entry) {
         if (!root.claimPaste(entry))
             return;
-        const ts = Date.now();
-        const tmpPath = `/tmp/omd-clip-${ts}.png`;
-        Quickshell.execDetached(["bash", "-c",
-            `printf '${ClipboardStyle.shellSingleQuoteEscape(entry)}' | ${root.cliphistBinary} decode > "${tmpPath}" && payload=$(mktemp) && trap 'rm -f "$payload"' EXIT && printf '%s ' "${tmpPath}" > "$payload" && wl-copy < "$payload" && ${root.pasteCommand} --file "$payload" auto && notify-send -t 2000 '📋 已复制路径' "${tmpPath}"`
-        ]);
+        Quickshell.execDetached([root.pasteHelper, "--entry", entry, "--path"]);
     }
 
     // Smart paste: like paste(), but when the entry is an image AND the
@@ -143,12 +146,7 @@ Singleton {
         }
         if (!root.claimPaste(entry))
             return;
-        const ts = Date.now();
-        const tmpPath = `/tmp/omd-clip-${ts}.png`;
-        const esc = ClipboardStyle.shellSingleQuoteEscape(entry);
-        Quickshell.execDetached(["bash", "-c",
-            `class=$(hyprctl activewindow -j 2>/dev/null | jq -r '.class // ""' 2>/dev/null)\npayload=$(mktemp)\ntrap 'rm -f "$payload"' EXIT\nis_term=0\ncase "$class" in *kitty*|*alacritty*|*Alacritty*|*foot*|*wezterm*|*xterm*|*XTerm*|*tmux*|*urxvt*|*Rxvt*|*st-terminal*) is_term=1 ;; esac\nif [ "$is_term" = 1 ]; then\n  printf '${esc}' | ${root.cliphistBinary} decode > "${tmpPath}" 2>/dev/null\n  if [ -s "${tmpPath}" ]; then\n    printf '%s ' "${tmpPath}" > "$payload"\n    wl-copy < "$payload" && ${root.pasteCommand} --file "$payload" auto "$class"\n    notify-send -t 2000 '📋 已粘贴图片路径' "${tmpPath}" 2>/dev/null || true\n  else\n    rm -f "${tmpPath}"\n    printf '${esc}' | ${root.cliphistBinary} decode > "$payload" && [ -s "$payload" ] && wl-copy < "$payload" && ${root.pasteCommand} --file "$payload" auto "$class"\n  fi\nelse\n  printf '${esc}' | ${root.cliphistBinary} decode > "$payload" && [ -s "$payload" ] && wl-copy < "$payload" && ${root.pasteCommand} --file "$payload" auto "$class"\nfi`
-        ]);
+        Quickshell.execDetached([root.pasteHelper, "--entry", entry, "--smart"]);
     }
 
     Process {

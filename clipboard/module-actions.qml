@@ -12,10 +12,16 @@ Item {
         var clipDir = ModuleLoader.modulePath("clipboard")
         if (!clipDir) return
 
-        ActionManager.register("clipboard.store-toggle", "clipboard", "Toggle clipboard store", {
+        ActionManager.register("clipboard.store-repair", "clipboard", "Repair clipboard store", {
             type: "process",
-            command: [clipDir + "/bin/omd-clipboard-store", "toggle"]
-        }, {description: "Start or stop the clipboard history daemon"})
+            command: [clipDir + "/bin/omd-clipboard-store", "repair"]
+        }, {description: "Ensure the clipboard history watcher is running"})
+
+        // Compatibility alias for older keybindings and menus.
+        ActionManager.register("clipboard.store-toggle", "clipboard", "Repair clipboard store", {
+            type: "process",
+            command: [clipDir + "/bin/omd-clipboard-store", "repair"]
+        }, {description: "Ensure the clipboard history watcher is running"})
 
         ActionManager.register("clipboard.toggle", "clipboard", "Toggle clipboard", {
             type: "process",
