@@ -69,6 +69,10 @@ Singleton {
     }
 
     function refresh() {
+        if (readProc.running) {
+            readProc.refreshPending = true
+            return
+        }
         readProc.buffer = []
         readProc.running = true
     }
@@ -184,6 +188,7 @@ Singleton {
     Process {
         id: readProc
         property list<string> buffer: []
+        property bool refreshPending: false
 
         command: [root.cliphistBinary, "list"]
 
@@ -199,6 +204,10 @@ Singleton {
                 root.pruneImageCache()
             } else {
                 console.error("[Cliphist] Failed to refresh with code", exitCode, "and status", exitStatus)
+            }
+            if (readProc.refreshPending) {
+                readProc.refreshPending = false
+                Qt.callLater(() => root.refresh())
             }
         }
     }

@@ -119,6 +119,11 @@ Item {
             // Select the first entry by default and reveal its preview once
             // the (async) cliphist list arrives.
             previewDelay.restart();
+            // Reset scroll position: the previous session's contentY persists
+            // when the dialog reopens within the warmup window (25s). Without
+            // this, data arrives after positionViewAtIndex was called with 0
+            // items and the list appears at a random scroll offset.
+            clipboardList.contentY = 0;
             Qt.callLater(() => {
                 place();
                 searchField.forceActiveFocus();
@@ -135,8 +140,14 @@ Item {
             // Reveal the preview for the now-loaded first entry on open.
             if (clipboardDialog.visible && !clipboardDialog.previewRequested && clipboardDialog.keyboardIndex === 0)
                 previewDelay.restart();
+            // Entries have arrived — ensure the list is scrolled to the top.
+            // positionViewAtIndex may have been a no-op on show because the
+            // model was still empty; now that data is here, actually position it.
+            if (clipboardDialog.visible && clipboardDialog.keyboardIndex === 0 && clipboardList.count > 0)
+                clipboardList.positionViewAtIndex(0, ListView.Beginning);
         }
     }
+
 
     Process {
         id: textDecoder
