@@ -1,29 +1,72 @@
 #!/bin/bash
-set -eu
-script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
-app_dir="${script_dir%/*}/apps/omd-clipboard"
+# omd-clipboard-store — Self-supervising clipboard history store daemon
+#
+# Ran by omd-restart at startup.  Watches the Wayland clipboard for both
+# text/plain and image/png changes and stores every new entry into cliphist.
+#
+# Each watcher runs in its own background while-loop so a transient failure
+# (Wayland socket disconnect, OOM, wl-paste crash) is automatically retried
+# after a 1-second pause.  The daemon also sends an IPC "update" signal to
+# the clipboard QS process so the UI refreshes immediately.
+#
+# If the whole daemon process dies (SIGKILL, OOM-killer), systemd (or the
+# next omd-restart run) re-launches it, and stale orphaned wl-paste children
+# are cleaned up by omd_stop_quickshell.
 
-# Rolling hash directory for dedup (2 min window)
+set -euo pipefail
+IFS=$'\n\t'
+
+script_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+app_dir="${script_dir%/*}/apps/omd-clipboard"
 hash_dir="/tmp/omd-clipboard-store-hashes"
+pid_file="/tmp/omd-clipboard-store.pid"
+log_tag="[omd-clipboard-store]"
+
+# ── Singleton guard ──────────────────────────────────────────────────────
+if [ -f "$pid_file" ] && kill -0 "$(cat "$pid_file")" 2>/dev/null; then
+    echo "$log_tag Another instance already running (PID $(cat "$pid_file"))" >&2
+    exit 0
+fi
+echo "$$" > "$pid_file"
+
+cleanup() {
+    local rc=$?
+    echo "$log_tag Shutting down..." >&2
+    # Kill supervised children (subshells running run_watcher).
+    for pid in "${_children[@]}"; do
+        kill "$pid" 2>/dev/null || true
+    done
+    # Kill orphaned wl-paste watchers — our children / grandchildren may have
+    # left them behind if the subshell died without propagating the signal.
+    pkill -f "wl-paste.*--watch.*${app_dir}" 2>/dev/null || true
+    sleep 0.2 2>/dev/null || true
+    wait 2>/dev/null || true
+    rm -f "$pid_file"
+    exit "$rc"
+}
+trap cleanup EXIT TERM INT
+trap '' HUP  # ignore SIGHUP so terminal closes don't kill us
+
+# ── Kill stale watchers ──────────────────────────────────────────────────
+# If the previous daemon instance was killed without cleanup (SIGKILL, OOM),
+# orphaned wl-paste processes would keep running.  Clean them up.
+pkill -f "wl-paste.*--watch.*${app_dir}" 2>/dev/null || true
+
+# ── Rolling hash dedup init ──────────────────────────────────────────────
 mkdir -p "$hash_dir"
-# Clean stale hashes on startup
 find "$hash_dir" -type f -mmin +2 -delete 2>/dev/null || true
 
-# wl-paste --watch only fires for the default MIME type (text/plain).
-# Images use image/png etc, so we need a separate watcher for each type.
-# Run text watcher in foreground, image watcher in background.
-# Both pass the app_dir as $1 for IPC.
+# ── Watcher scripts (passed to bash -c) ──────────────────────────────────
+# These run as separate child processes; exit 0 only exits the inner shell.
 
-# Text watcher with rolling dedup
-wl-paste --watch bash -c '
+BODY_TEXT='
     app_dir="$1"
-
     data=$(cat)
     # Reject visually empty text, including Unicode zero-width/format chars.
     if ! printf "%s" "$data" | grep -Pq "[^\s\p{Cf}\p{Cc}]"; then
         exit 0
     fi
-    # Check if it contains /tmp/omd-clip-
+    # Skip OMD temp files (self-feed guard for paste-from-history)
     if [[ "$data" == *"/tmp/omd-clip-"* ]]; then
         exit 0
     fi
@@ -36,33 +79,61 @@ wl-paste --watch bash -c '
     fi
     # Clean hashes older than 2 min
     find "$hash_dir" -type f -mmin +2 -delete 2>/dev/null || true
-    # Store
-    echo -n "$data" | cliphist store
+    # Store (failure non-fatal — just skip this entry)
+    echo -n "$data" | cliphist store || true
     touch "$hash_dir/$hash"
+    # Notify the clipboard QS process (no-op if dialog is closed)
     qs -p "$app_dir" ipc call cliphistService update 2>/dev/null || true
-' _ "$app_dir" &
+'
 
-# Image watcher with rolling dedup
-wl-paste -t image/png --watch bash -c '
+BODY_IMAGE='
     app_dir="$1"
-
     tmp=$(mktemp)
     trap "rm -f \"$tmp\"" EXIT
     cat > "$tmp"
     [ -s "$tmp" ] || exit 0
     file -b --mime-type "$tmp" | grep -q "^image/" || exit 0
-    # Rolling dedup: skip if same image was stored in the last 2 minutes
     hash=$(md5sum "$tmp" | cut -d" " -f1)
     hash_dir="/tmp/omd-clipboard-store-hashes"
     mkdir -p "$hash_dir"
     if [ -f "$hash_dir/$hash" ]; then
         exit 0
     fi
-    # Clean hashes older than 2 min
     find "$hash_dir" -type f -mmin +2 -delete 2>/dev/null || true
-    cliphist store < "$tmp"
+    cliphist store < "$tmp" || true
     touch "$hash_dir/$hash"
     qs -p "$app_dir" ipc call cliphistService update 2>/dev/null || true
-' _ "$app_dir"
+'
 
+# ── Supervised watcher runner ────────────────────────────────────────────
+# Runs one watcher in a while-loop, restarting with a 1-second pause on
+# any non-zero exit (crash, Wayland disconnect, transient error).
+run_watcher() {
+    local title="$1"        # "text" or "image"
+    local mime_switch="$2"  # "" for text/plain, "-t image/png" for images
+    local body="$3"         # $BODY_TEXT or $BODY_IMAGE
+
+    while true; do
+        echo "$log_tag Starting $title watcher..." >&2
+        local rc=0
+        if [ -n "$mime_switch" ]; then
+            wl-paste $mime_switch --watch bash -c "$body" _ "$app_dir" || rc=$?
+        else
+            wl-paste --watch bash -c "$body" _ "$app_dir" || rc=$?
+        fi
+        echo "$log_tag $title watcher exited (code $rc), restarting in 1s..." >&2
+        sleep 1
+    done
+}
+
+# ── Launch supervised watchers ───────────────────────────────────────────
+run_watcher "text"  ""               "$BODY_TEXT"  &
+_children+=($!)
+run_watcher "image" "-t image/png"   "$BODY_IMAGE" &
+_children+=($!)
+
+echo "$log_tag Started (PID $$) — text+image watchers active" >&2
+
+# Block — wait will return when both background watchers exit.
+# Since each runs in a supervised while loop, this only happens on SIGTERM.
 wait
