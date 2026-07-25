@@ -1,34 +1,68 @@
 #!/bin/bash
 set -eu
 script_dir=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+app_dir="${script_dir%/*}/apps/omd-clipboard"
+
+# Rolling hash directory for dedup (2 min window)
+hash_dir="/tmp/omd-clipboard-store-hashes"
+mkdir -p "$hash_dir"
+# Clean stale hashes on startup
+find "$hash_dir" -type f -mmin +2 -delete 2>/dev/null || true
 
 # wl-paste --watch only fires for the default MIME type (text/plain).
 # Images use image/png etc, so we need a separate watcher for each type.
 # Run text watcher in foreground, image watcher in background.
+# Both pass the app_dir as $1 for IPC.
 
+# Text watcher with rolling dedup
 wl-paste --watch bash -c '
+    app_dir="$1"
+
     data=$(cat)
     # Reject visually empty text, including Unicode zero-width/format chars.
-    if ! printf %s "$data" | grep -Pq "[^\\s\\p{Cf}\\p{Cc}]"; then
+    if ! printf "%s" "$data" | grep -Pq "[^\s\p{Cf}\p{Cc}]"; then
         exit 0
     fi
     # Check if it contains /tmp/omd-clip-
     if [[ "$data" == *"/tmp/omd-clip-"* ]]; then
         exit 0
     fi
-    # Store it
+    # Rolling dedup: skip if same content was stored in the last 2 minutes
+    hash=$(printf "%s" "$data" | md5sum | cut -d" " -f1)
+    hash_dir="/tmp/omd-clipboard-store-hashes"
+    mkdir -p "$hash_dir"
+    if [ -f "$hash_dir/$hash" ]; then
+        exit 0
+    fi
+    # Clean hashes older than 2 min
+    find "$hash_dir" -type f -mmin +2 -delete 2>/dev/null || true
+    # Store
     echo -n "$data" | cliphist store
-    qs -p "${script_dir%/*}/apps/omd-clipboard" ipc call cliphistService update 2>/dev/null || true
-' &
+    touch "$hash_dir/$hash"
+    qs -p "$app_dir" ipc call cliphistService update 2>/dev/null || true
+' _ "$app_dir" &
 
-wl-paste -t image/png --watch sh -c '
+# Image watcher with rolling dedup
+wl-paste -t image/png --watch bash -c '
+    app_dir="$1"
+
     tmp=$(mktemp)
-    trap '\''rm -f "$tmp"'\'' EXIT
+    trap "rm -f \"$tmp\"" EXIT
     cat > "$tmp"
     [ -s "$tmp" ] || exit 0
     file -b --mime-type "$tmp" | grep -q "^image/" || exit 0
+    # Rolling dedup: skip if same image was stored in the last 2 minutes
+    hash=$(md5sum "$tmp" | cut -d" " -f1)
+    hash_dir="/tmp/omd-clipboard-store-hashes"
+    mkdir -p "$hash_dir"
+    if [ -f "$hash_dir/$hash" ]; then
+        exit 0
+    fi
+    # Clean hashes older than 2 min
+    find "$hash_dir" -type f -mmin +2 -delete 2>/dev/null || true
     cliphist store < "$tmp"
-    qs -p "${script_dir%/*}/apps/omd-clipboard" ipc call cliphistService update 2>/dev/null || true
-'
+    touch "$hash_dir/$hash"
+    qs -p "$app_dir" ipc call cliphistService update 2>/dev/null || true
+' _ "$app_dir"
 
 wait
