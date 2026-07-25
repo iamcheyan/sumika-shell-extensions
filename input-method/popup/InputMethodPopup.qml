@@ -7,7 +7,6 @@ import qs.modules.common.functions
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
-import qs.modules.common.widgets
 import qs.core.runtime
 
 PopupColumn {
@@ -32,6 +31,12 @@ PopupColumn {
         subtitle: im.available ? im.summary : "Fcitx5 is unavailable"
         tone: im.available ? TuiStyle.accent : TuiStyle.danger
         showDivider: true
+        actionIcon: "settings"
+        actionTooltip: "输入法设置"
+        onActionClicked: {
+            GlobalStates.barPopupType = "";
+            im.openConfiguration();
+        }
     }
 
     Repeater {
@@ -130,14 +135,5 @@ PopupColumn {
         font.family: Appearance.font.family.main
         font.pixelSize: Appearance.font.pixelSize.small
         wrapMode: Text.Wrap
-    }
-
-    PopupFooterLink {
-        Layout.fillWidth: true
-        label: "Fcitx configuration…"
-        onClicked: {
-            GlobalStates.barPopupType = "";
-            im.openConfiguration();
-        }
     }
 }

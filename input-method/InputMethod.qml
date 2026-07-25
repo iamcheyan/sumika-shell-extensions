@@ -107,7 +107,7 @@ Singleton {
     Process {
         id: statusProcess
         command: [root.helper, "status"]
-        running: ModuleLoader.isEnabled("input-method")
+        running: true
 
         stdout: StdioCollector {
             onStreamFinished: root.applyStatus(text)
@@ -164,10 +164,13 @@ Singleton {
         onTriggered: root.refresh()
     }
 
+    // Fast polling on startup until the backend becomes available, then
+    // fall back to slow periodic refresh to catch manual schema changes.
     Timer {
-        interval: 2000
-        running: ModuleLoader.isEnabled("input-method")
+        id: pollTimer
+        interval: root.available ? 2000 : 300
         repeat: true
+        running: true
         onTriggered: root.refresh()
     }
 }
