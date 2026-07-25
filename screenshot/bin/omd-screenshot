@@ -174,9 +174,11 @@ fast_capture() {
         save_path="$save_dir/screenshot-$(date '+%Y-%m-%d_%H.%M.%S').png"
         cp "$tmp_file" "$save_path"
     fi
+    cliphist store < "$tmp_file" 2>/dev/null || true
     wl-copy --type image/png < "$tmp_file"
     notify-send -i camera-photo "Screenshot" "Region copied to clipboard" 2>/dev/null || true
 }
+
 
 # Serialize the critical "kill + relaunch" section so rapid clicks do not
 # race each other. The lock is held ONLY for this section, then released before

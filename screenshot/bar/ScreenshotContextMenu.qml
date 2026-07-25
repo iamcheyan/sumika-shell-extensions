@@ -32,7 +32,12 @@ ContextMenuWindow {
         labelText: "Capture Fullscreen"
         onClicked: {
             Quickshell.execDetached(["bash", "-c",
-                "grim -o $(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name') - | wl-copy && notify-send -i camera-photo Screenshot \"Full screen copied to clipboard\""
+                "f=$(mktemp /tmp/omd-screenshot-full.XXXXXX.png); " +
+                "grim -o $(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name') \"$f\"; " +
+                "cliphist store < \"$f\" 2>/dev/null || true; " +
+                "wl-copy --type image/png < \"$f\"; " +
+                "rm -f \"$f\"; " +
+                "notify-send -i camera-photo Screenshot \"Full screen copied to clipboard\""
             ]);
             root.close();
         }
@@ -43,7 +48,15 @@ ContextMenuWindow {
         labelText: "Capture Monitor (3s delay)"
         onClicked: {
             Quickshell.execDetached(["bash", "-c",
-                "monitor=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name'); notify-send -i camera-photo Screenshot \"Capturing current monitor in 3 seconds\"; sleep 3; grim -o \"$monitor\" - | wl-copy && notify-send -i camera-photo Screenshot \"Current monitor copied to clipboard\""
+                "f=$(mktemp /tmp/omd-screenshot-delay.XXXXXX.png); " +
+                "monitor=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name'); " +
+                "notify-send -i camera-photo Screenshot \"Capturing current monitor in 3 seconds\"; " +
+                "sleep 3; " +
+                "grim -o \"$monitor\" \"$f\"; " +
+                "cliphist store < \"$f\" 2>/dev/null || true; " +
+                "wl-copy --type image/png < \"$f\"; " +
+                "rm -f \"$f\"; " +
+                "notify-send -i camera-photo Screenshot \"Current monitor copied to clipboard\""
             ]);
             root.close();
         }
@@ -89,28 +102,4 @@ ContextMenuWindow {
         }
     }
 
-    ContextMenuSeparator {}
-
-    ContextMenuItem {
-        nerdIcon: NerdIconMap.visibilityOff
-        labelText: "Hide"
-        onClicked: {
-            var hidden = Config.options.bar.hiddenIcons;
-            var alreadyHidden = false;
-            for (var i = 0; i < hidden.length; i++) {
-                if (hidden[i] === "screenshot") {
-                    alreadyHidden = true;
-                    break;
-                }
-            }
-            if (!alreadyHidden) {
-                var newHidden = [];
-                for (var i = 0; i < hidden.length; i++)
-                    newHidden.push(hidden[i]);
-                newHidden.push("screenshot");
-                Config.setNestedValue("bar.hiddenIcons", newHidden);
-            }
-            root.close();
-        }
-    }
 }

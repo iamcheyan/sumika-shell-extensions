@@ -102,12 +102,14 @@ Singleton {
         switch (action) {
             case ScreenshotAction.Action.Copy:
                 if (saveDir === "") {
-                    return `${setup}cat "$tmpFile" | wl-copy`;
+                    return `${setup}cliphist store < "$tmpFile" 2>/dev/null || true; cat "$tmpFile" | wl-copy`;
                 }
                 return `${setup}saveDir=${quote(saveDir)}; ` +
                     `mkdir -p "$saveDir" && ` +
                     `savePath="$saveDir/screenshot-$(date '+%Y-%m-%d_%H.%M.%S').png" && ` +
-                    `cat "$tmpFile" | tee "$savePath" | wl-copy`;
+                    `cp "$tmpFile" "$savePath" && ` +
+                    `cliphist store < "$tmpFile" 2>/dev/null || true; ` +
+                    `cat "$tmpFile" | wl-copy`;
             case ScreenshotAction.Action.Edit:
                 return `${setup}cat "$tmpFile" | ${annotationCommand()}`;
             case ScreenshotAction.Action.Search:
