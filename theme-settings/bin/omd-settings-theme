@@ -469,7 +469,9 @@ copy_theme() {
 
 refresh_running_apps() {
   local app qs_cmd="${QS_CMD:-qs}"
-  local apps=(omd-bar omd-overview omd-applauncher omd-clipboard)
+  # Core UI is hosted by omd-bar; settings is a separate on-demand core app.
+  # Keep the list explicit so theme changes do not depend on extension state.
+  local apps=(omd-bar omd-settings)
 
   for app in "${apps[@]}"; do
     [[ -d "$OMD_ROOT/apps/$app" ]] || continue
