@@ -34,7 +34,7 @@ Item {
 
         // Right click: open context menu
         altAction: function(event) {
-            menuLoader.active = true;
+            menuLoader.open();
         }
     }
 
@@ -44,22 +44,9 @@ Item {
         color: Appearance.colors.colBarText
     }
 
-    Loader {
+    BarContextMenu {
         id: menuLoader
-        active: false
-        sourceComponent: ScreenshotContextMenu {
-            Component.onCompleted: this.open()
-            anchor {
-                window: root.QsWindow.window
-                item: button
-                gravity: Config.options.bar.vertical
-                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom)
-                edges: Config.options.bar.vertical
-                    ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                    : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom)
-            }
-            onMenuClosed: menuLoader.active = false
-        }
+        anchorItem: button
+        sourceComponent: ScreenshotContextMenu {}
     }
 }

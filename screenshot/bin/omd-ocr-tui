@@ -153,12 +153,11 @@ def download_model(lang_code, log):
 
 
 # ── TUI ─────────────────────────────────────────────────────────────────
-class OcrSetupTUI:
-    MIN_H = 14
-    MIN_W = 44
+class OcrModel:
+    """Model for the OCR setup TUI — compatible with S.run_tui_loop."""
+    dirty = True
 
-    def __init__(self, stdscr: curses.window):
-        self.stdscr = stdscr
+    def __init__(self):
         self.config = read_config()
         ocr_cfg = self.config.get("ocr", {})
         self.installed = ocr_cfg.get("languages", [])
@@ -174,72 +173,15 @@ class OcrSetupTUI:
         self.busy_log: list = []
         self.status_msg = ""
         self.status_tone = "ok"
-        self._quit = False
         self._done_event = threading.Event()
         self._install_ok = [False]
 
-    # ── lifecycle ──
-
-    def run(self):
-        self._init_curses()
-        while not self._quit:
-            self._draw()
-            self._handle_input()
-
-    def _init_curses(self):
-        S.setup_locale()
-        try:
-            curses.curs_set(0)
-        except curses.error:
-            pass
-        curses.noecho()
-        curses.cbreak()
-        self.stdscr.keypad(True)
-        S.init_colors()
-        self.stdscr.timeout(150)
-
-    # ── hero ──
-
-    def _hero_info(self):
-        title = "OCR Setup & Model Downloader"
-        subtitle_parts = []
-        subtitle_parts.append(
-            "Installed" if self.have_ocr else "Not installed")
-        subtitle_parts.append(f"Default: {self.default_lang}")
-        extra = ""
-        if self.busy:
-            extra = "working..."
-        elif self.status_msg:
-            extra = self.status_msg
-        if extra:
-            subtitle_parts.append(extra)
-        subtitle = " · ".join(subtitle_parts)
-        status_text = ""
-        tone = "muted"
-        if self.busy:
-            status_text = "Working..."
-            tone = "warn"
-        elif self.have_ocr:
-            status_text = "Engine ready"
-            tone = "ok"
-        else:
-            status_text = "Not installed"
-            tone = "muted"
-        msg = ""
-        if self.busy:
-            msg = "working..."
-        elif self.status_msg:
-            msg = self.status_msg
-            tone = self.status_tone
-        return S.hero_line(title, subtitle, tone, self.busy, msg, status_text)
-
-    # ── background work ──
-
-    def _start_work(self, force=False):
+    def start_work(self, force=False):
         self.busy_log.clear()
         self.busy = True
         self.status_msg = ""
         self._done_event.clear()
+        self.dirty = True
         lang_codes = sorted(self.selected)
         cfg = {"lang": self.default_lang, "languages": lang_codes, "engine": "onnxruntime"}
 
@@ -269,21 +211,8 @@ class OcrSetupTUI:
         t = threading.Thread(target=_work, daemon=True)
         t.start()
 
-    # ── draw ──
-
-    def _draw(self):
-        h, w = self.stdscr.getmaxyx()
-        self.stdscr.erase()
-
-        if h < self.MIN_H or w < self.MIN_W:
-            try:
-                self.stdscr.addnstr(0, 0, f"Terminal too small (min {self.MIN_W}x{self.MIN_H})", w)
-            except curses.error:
-                pass
-            self.stdscr.refresh()
-            return
-
-        # Check background completion
+    def check_completion(self):
+        """Called via refresh_callback — checks if background work finished."""
         if self.busy and self._done_event.is_set():
             self.busy = False
             self.have_ocr = check_paddleocr()
@@ -293,152 +222,202 @@ class OcrSetupTUI:
             else:
                 self.status_msg = "Download process encountered issues."
                 self.status_tone = "danger"
+            self.dirty = True
 
-        margin = 1
-        hero_h = 2
 
-        # Layout
-        n_langs = len(LANGUAGES)
-        log_h = 6 if (self.busy or self.status_msg) else 0
-        help_h = 2
-        list_h = max(4, h - hero_h - log_h - help_h - margin * 2)
+def _hero_info(m):
+    title = "OCR Setup & Model Downloader"
+    subtitle_parts = []
+    subtitle_parts.append(
+        "Installed" if m.have_ocr else "Not installed")
+    subtitle_parts.append(f"Default: {m.default_lang}")
+    extra = ""
+    if m.busy:
+        extra = "working..."
+    elif m.status_msg:
+        extra = m.status_msg
+    if extra:
+        subtitle_parts.append(extra)
+    subtitle = " · ".join(subtitle_parts)
+    status_text = ""
+    tone = "muted"
+    if m.busy:
+        status_text = "Working..."
+        tone = "warn"
+    elif m.have_ocr:
+        status_text = "Engine ready"
+        tone = "ok"
+    else:
+        status_text = "Not installed"
+        tone = "muted"
+    msg = ""
+    if m.busy:
+        msg = "working..."
+    elif m.status_msg:
+        msg = m.status_msg
+        tone = m.status_tone
+    return S.hero_line(title, subtitle, tone, m.busy, msg, status_text)
 
-        # ── Hero ──
-        S.draw_hero(self.stdscr, self._hero_info())
 
-        # ── Language list panel ──
-        y = margin + hero_h - 1
-        box_w = w - margin * 2
-        S.draw_focus_border(self.stdscr, True, y, margin, list_h, box_w, "Languages")
-        self._draw_lang_list(y + 1, margin + 1, list_h - 2, box_w - 2)
-        y += list_h
+def _draw_lang_list(stdscr, m, y, x, h, w):
+    n = len(LANGUAGES)
+    max_vis = min(n, h)
+    scroll = max(0, min(m.cursor - max_vis + 1, n - max_vis))
 
-        # ── Log / status panel ──
-        if log_h > 0:
-            log_y = y
-            if self.busy:
-                S.draw_border(self.stdscr, log_y, margin, log_h, box_w, "Activity")
-                S.draw_log_in_area(self.stdscr, log_y, margin, log_h, box_w,
-                                   self.busy_log, empty_text="Starting...")
-            elif self.status_msg:
-                S.draw_border(self.stdscr, log_y, margin, log_h, box_w, "Status")
-                ok = self.status_tone == "ok"
-                attr = S.ATTR_OK if ok else S.ATTR_DANGER
-                S.safe_addstr(
-                    self.stdscr, log_y + 1, margin + 2,
-                    S.truncate(self.status_msg, box_w - 4),
-                    attr)
-            y += log_h
+    for i in range(scroll, min(scroll + max_vis, n)):
+        code, native, eng = LANGUAGES[i]
+        checked = code in m.selected
+        is_def = code == m.default_lang
+        trailing = "← default" if is_def else ""
+        tag, text = S.toggle_line(
+            checked, f"{native} ({eng})",
+            focused=(i == m.cursor and not m.busy),
+            trailing=trailing)
+        attr = S.TAG_STYLE.get(tag, S.ATTR_TEXT)
+        S.safe_addstr(stdscr, y + (i - scroll), x,
+                      S.truncate(text, w), attr)
 
-        # ── Help bar ──
-        if not self.busy:
-            gen = [("arrows", "navigate"), ("q", "quit")]
-            tool = [
-                ("space", "toggle"), ("d", "default"),
-                ("i", "install"), ("r", "reinstall"),
-                ("s", "save"),
-            ]
+
+def _view(stdscr, m):
+    h, w = stdscr.getmaxyx()
+    stdscr.erase()
+
+    if not S.require_terminal_size(stdscr, 44, 14):
+        return
+
+    margin = 1
+    hero_h = 2
+
+    # Layout
+    log_h = 6 if (m.busy or m.status_msg) else 0
+    help_h = 1
+    list_h = max(4, h - hero_h - log_h - help_h - margin * 2)
+
+    # ── Hero ──
+    S.draw_hero(stdscr, _hero_info(m))
+
+    # ── Language list panel ──
+    y = margin + hero_h - 1
+    box_w = w - margin * 2
+    S.draw_focus_border(stdscr, True, y, margin, list_h, box_w, "Languages")
+    _draw_lang_list(stdscr, m, y + 1, margin + 1, list_h - 2, box_w - 2)
+    y += list_h
+
+    # ── Log / status panel ──
+    if log_h > 0:
+        log_y = y
+        if m.busy:
+            S.draw_border(stdscr, log_y, margin, log_h, box_w, "Activity")
+            S.draw_log_in_area(stdscr, log_y, margin, log_h, box_w,
+                               m.busy_log, empty_text="Starting...")
+        elif m.status_msg:
+            S.draw_border(stdscr, log_y, margin, log_h, box_w, "Status")
+            ok = m.status_tone == "ok"
+            attr = S.ATTR_OK if ok else S.ATTR_DANGER
+            S.safe_addstr(
+                stdscr, log_y + 1, margin + 2,
+                S.truncate(m.status_msg, box_w - 4),
+                attr)
+        y += log_h
+
+    # ── Help bar ──
+    if not m.busy:
+        gen = [("arrows", "navigate"), ("q", "quit")]
+        tool = [
+            ("space", "toggle"), ("d", "default"),
+            ("i", "install"), ("r", "reinstall"),
+            ("s", "save"),
+        ]
+    else:
+        gen = [("q", "cancel")]
+        tool = [("wait..", "installing")]
+    S.draw_help_bar(stdscr, gen, tool)
+
+    S.finish_frame(stdscr)
+
+
+def _handle_key(stdscr, m, key):
+    if key in (ord("q"), ord("Q"), 27):
+        return False
+
+    if m.busy:
+        return True
+
+    n = len(LANGUAGES)
+
+    if key in (ord("j"), ord("J"), curses.KEY_DOWN):
+        if m.cursor < n - 1:
+            m.cursor += 1
+            m.dirty = True
+    elif key in (ord("k"), ord("K"), curses.KEY_UP):
+        if m.cursor > 0:
+            m.cursor -= 1
+            m.dirty = True
+    elif key == ord(" "):
+        code = LANGUAGES[m.cursor][0]
+        if code in m.selected:
+            m.selected.discard(code)
+            if code == m.default_lang and m.selected:
+                m.default_lang = next(iter(m.selected))
         else:
-            gen = [("q", "cancel")]
-            tool = [("wait..", "installing")]
-        S.draw_help_bar(self.stdscr, gen, tool)
+            m.selected.add(code)
+            m.default_lang = code
+        m.status_msg = ""
+        m.dirty = True
+    elif key in (ord("d"), ord("D"), 10, 13):
+        code = LANGUAGES[m.cursor][0]
+        m.selected.add(code)
+        m.default_lang = code
+        m.status_msg = f"Default: {code}"
+        m.status_tone = "ok"
+        m.dirty = True
+    elif key in (ord("i"), ord("I")):
+        if not m.selected:
+            m.status_msg = "Select at least one language."
+            m.status_tone = "danger"
+            m.dirty = True
+            return True
+        m.start_work(force=False)
+    elif key in (ord("r"), ord("R")):
+        if not m.selected:
+            m.status_msg = "Select at least one language."
+            m.status_tone = "danger"
+            m.dirty = True
+            return True
+        m.start_work(force=True)
+    elif key in (ord("s"), ord("S")):
+        if not m.selected:
+            m.status_msg = "Select at least one language."
+            m.status_tone = "danger"
+            m.dirty = True
+            return True
+        cfg = {
+            "lang": m.default_lang,
+            "languages": sorted(m.selected),
+            "engine": "onnxruntime",
+        }
+        m.config["ocr"] = cfg
+        err = write_config(m.config)
+        if err is True:
+            m.status_msg = f"✓ Config saved (Default: {m.default_lang})"
+            m.status_tone = "ok"
+        else:
+            m.status_msg = f"✗ Config save failed: {err}"
+            m.status_tone = "danger"
+        m.dirty = True
 
-        S.finish_frame(self.stdscr)
+    return True
 
-    def _draw_lang_list(self, y, x, h, w):
-        n = len(LANGUAGES)
-        max_vis = min(n, h)
-        scroll = max(0, min(self.cursor - max_vis + 1, n - max_vis))
-
-        for i in range(scroll, min(scroll + max_vis, n)):
-            code, native, eng = LANGUAGES[i]
-            checked = code in self.selected
-            is_def = code == self.default_lang
-            trailing = "← default" if is_def else ""
-            tag, text = S.toggle_line(
-                checked, f"{native} ({eng})",
-                focused=(i == self.cursor and not self.busy),
-                trailing=trailing)
-            attr = S.TAG_STYLE.get(tag, S.ATTR_TEXT)
-            S.safe_addstr(self.stdscr, y + (i - scroll), x,
-                          S.truncate(text, w), attr)
-
-    # ── input ──
-
-    def _handle_input(self):
-        key = self.stdscr.getch()
-        if key == -1:
-            return
-
-        if key in (ord("q"), ord("Q"), 27):
-            self._quit = True
-            return
-
-        if self.busy:
-            return
-
-        n = len(LANGUAGES)
-
-        if key in (ord("j"), ord("J"), curses.KEY_DOWN):
-            if self.cursor < n - 1:
-                self.cursor += 1
-        elif key in (ord("k"), ord("K"), curses.KEY_UP):
-            if self.cursor > 0:
-                self.cursor -= 1
-        elif key == ord(" "):
-            code = LANGUAGES[self.cursor][0]
-            if code in self.selected:
-                self.selected.discard(code)
-                if code == self.default_lang and self.selected:
-                    self.default_lang = next(iter(self.selected))
-            else:
-                self.selected.add(code)
-                self.default_lang = code
-            self.status_msg = ""
-        elif key in (ord("d"), ord("D"), 10, 13):
-            code = LANGUAGES[self.cursor][0]
-            self.selected.add(code)
-            self.default_lang = code
-            self.status_msg = f"Default: {code}"
-            self.status_tone = "ok"
-        elif key in (ord("i"), ord("I")):
-            if not self.selected:
-                self.status_msg = "Select at least one language."
-                self.status_tone = "danger"
-                return
-            self._start_work(force=False)
-        elif key in (ord("r"), ord("R")):
-            if not self.selected:
-                self.status_msg = "Select at least one language."
-                self.status_tone = "danger"
-                return
-            self._start_work(force=True)
-        elif key in (ord("s"), ord("S")):
-            if not self.selected:
-                self.status_msg = "Select at least one language."
-                self.status_tone = "danger"
-                return
-            cfg = {
-                "lang": self.default_lang,
-                "languages": sorted(self.selected),
-                "engine": "onnxruntime",
-            }
-            self.config["ocr"] = cfg
-            err = write_config(self.config)
-            if err is True:
-                self.status_msg = f"✓ Config saved (Default: {self.default_lang})"
-                self.status_tone = "ok"
-            else:
-                self.status_msg = f"✗ Config save failed: {err}"
-                self.status_tone = "danger"
-
-
-# ── entry ───────────────────────────────────────────────────────────────
 
 def main():
     S.setup_locale()
     try:
-        curses.wrapper(lambda stdscr: OcrSetupTUI(stdscr).run())
+        curses.wrapper(lambda stdscr: S.run_tui_loop(
+            stdscr, OcrModel(), _view, _handle_key,
+            poll_timeout=150,
+            refresh_interval=0.3,
+            refresh_callback=lambda m: m.check_completion()
+        ))
     except KeyboardInterrupt:
         pass
 
