@@ -263,6 +263,34 @@ not currently render the optional preview PNG files as image previews.
 
 ## 10. Intended Long-Term Model
 
+### 10.1 Sumika Core Theme Contract
+
+Theme switching also updates the core Sumika UI. The extension writes the
+runtime adapter at:
+
+```text
+~/.local/state/sumika-shell/theme/current/quickshell.json
+```
+
+Core Quickshell processes read that file through `OmarchyTheme.qml`. Shared
+core styling is exposed through `quickshell/modules/common/TuiStyle.qml`.
+Core modules must use `TuiStyle` for accents, active borders, menu borders,
+selection, hover states, launcher indicators, and other theme-sensitive
+emphasis. They must not hard-code a theme accent in individual QML files.
+
+The fallback remains available when no theme extension or runtime adapter is
+present: the core uses its default light-gray accent and dark surfaces.
+Applying a theme refreshes the `omd-bar` and `omd-settings` entry points. The
+Overview and App Launcher are hosted by `omd-bar`, so they receive the same
+theme state without separate processes.
+
+When adding a new core component:
+
+1. Add reusable tokens to `TuiStyle.qml` when the token is shared.
+2. Bind the component to those tokens instead of literal accent colors.
+3. Keep semantic warning/error colors separate from the theme accent.
+4. Verify both fallback mode and a generated `quickshell.json` theme mode.
+
 The extension should remain responsible for:
 
 - theme discovery;
