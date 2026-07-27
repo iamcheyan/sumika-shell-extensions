@@ -1,31 +1,18 @@
 pragma ComponentBehavior: Bound
-import qs
-import qs.modules.common
 import qs.modules.common.widgets
-import qs.modules.common.functions
+import qs.services
 import QtQuick
 import QtQuick.Layouts
-import Qt5Compat.GraphicalEffects
 import Quickshell
-import Quickshell.Io
 
-PopupWindow {
+ManagedPopupWindow {
     id: root
 
-
     property string shareDir: FileUtils.trimFileProtocol(Qt.resolvedUrl("..")) + "/bin"
-    signal closed()
-
-    color: "transparent"
 
     readonly property int itemHeight: 32
     readonly property int indicatorSize: 16
     readonly property real hPadding: 10
-    readonly property real menuPadding: 6
-    readonly property real outerPadding: Appearance.sizes.elevationMargin
-
-    implicitWidth: popupBackground.implicitWidth + root.outerPadding * 2
-    implicitHeight: popupBackground.implicitHeight + root.outerPadding * 2
 
     // ── Model status state ──
     property string modelStatus: "checking"
@@ -34,6 +21,7 @@ PopupWindow {
     property string daemonStatus: "checking"
     property bool downloadRunning: false
 
+    // Override open/close to manage barPopupType
     function open() {
         root.visible = true;
         GlobalStates.barPopupType = "voiceModel";
@@ -41,19 +29,12 @@ PopupWindow {
     function close() {
         if (GlobalStates.barPopupType === "voiceModel")
             GlobalStates.barPopupType = "";
-        root.visible = false;
-        root.closed();
+        root.popupClosed();
     }
 
     Component.onCompleted: {
         open();
         refreshAll();
-    }
-
-
-    Component.onDestruction: {
-        dismissGuard.stop();
-        GlobalFocusGrab.removeDismissable(root);
     }
 
     function refreshAll() {
@@ -125,33 +106,6 @@ PopupWindow {
         }
     }
 
-    Timer {
-        id: dismissGuard
-        interval: 50
-        repeat: false
-        onTriggered: {
-            if (root.visible)
-                GlobalFocusGrab.addDismissable(root);
-        }
-    }
-
-    onVisibleChanged: {
-        if (visible) {
-            dismissGuard.restart();
-        } else {
-            dismissGuard.stop();
-            GlobalFocusGrab.removeDismissable(root);
-        }
-    }
-
-
-    Connections {
-        target: GlobalFocusGrab
-        function onDismissed() {
-            root.close()
-        }
-    }
-
     Connections {
         target: GlobalStates
         function onBarPopupTypeChanged() {
@@ -161,249 +115,191 @@ PopupWindow {
         }
     }
 
+    // ── Content (fed to ManagedPopupWindow's default property) ──
 
-    MouseArea {
-        anchors.fill: parent
-        acceptedButtons: Qt.LeftButton | Qt.RightButton
-        hoverEnabled: true
-        onPressed: event => {
-            const pos = mapToItem(popupBackground, event.x, event.y)
-            if (pos.x < 0 || pos.x > popupBackground.width || pos.y < 0 || pos.y > popupBackground.height)
+    // Title
+    Item {
+        Layout.fillWidth: true
+        implicitHeight: root.itemHeight
+        StyledText {
+            anchors.centerIn: parent
+            text: "Offline Model Status"
+            color: TuiStyle.fg
+            font { pixelSize: 14; weight: Font.Medium }
+        }
+    }
+
+    Rectangle {
+        Layout.fillWidth: true
+        implicitHeight: 1
+        color: TuiStyle.line
+        opacity: TuiStyle.dividerOpacity
+        Layout.topMargin: 2
+        Layout.bottomMargin: 6
+    }
+
+    // ── Status rows ──
+    component StatusRow : Item {
+        property string label: ""
+        property string status: "checking"
+        property string detail: ""
+
+        implicitHeight: root.itemHeight
+        Layout.fillWidth: true
+
+        RowLayout {
+            anchors.fill: parent
+            anchors.leftMargin: root.hPadding
+            anchors.rightMargin: root.hPadding
+            spacing: 8
+
+            StyledText {
+                text: root.indicator(parent.parent.status)
+                color: root.indicatorColor(parent.parent.status)
+                font.pixelSize: root.indicatorSize
+                Layout.preferredWidth: root.indicatorSize
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            StyledText {
+                text: parent.parent.label
+                color: TuiStyle.fg
+                font.pixelSize: 13
+                Layout.fillWidth: true
+                Layout.alignment: Qt.AlignVCenter
+            }
+
+            StyledText {
+                text: parent.parent.detail
+                color: TuiStyle.fgSub
+                font.pixelSize: 12
+                visible: parent.parent.detail.length > 0
+                Layout.alignment: Qt.AlignVCenter
+            }
+        }
+    }
+
+    StatusRow {
+        label: "Model File (SenseVoice)"
+        status: root.modelStatus
+        detail: root.modelSize
+    }
+
+    StatusRow {
+        label: "Python Virtual Environment"
+        status: root.venvStatus
+        detail: root.venvStatus === "ok" ? "Ready" : ""
+    }
+
+    StatusRow {
+        label: "Voice Daemon"
+        status: root.daemonStatus
+        detail: root.daemonStatus === "ok" ? "Running" : root.daemonStatus === "idle" ? "Auto-start on use" : ""
+    }
+
+    Rectangle {
+        Layout.fillWidth: true
+        implicitHeight: 1
+        color: TuiStyle.line
+        opacity: TuiStyle.dividerOpacity
+        Layout.topMargin: 6
+        Layout.bottomMargin: 4
+    }
+
+    // ── Action buttons ──
+    RowLayout {
+        Layout.fillWidth: true
+        Layout.topMargin: 2
+        Layout.bottomMargin: 2
+        spacing: 6
+
+        Item { Layout.fillWidth: true }
+
+        RippleButton {
+            id: downloadBtn
+            enabled: !root.downloadRunning
+            implicitHeight: root.itemHeight
+            implicitWidth: 120
+            buttonRadius: 6
+            horizontalPadding: root.hPadding
+            colBackground: "transparent"
+            colBackgroundHover: TuiStyle.surfaceHover
+            colRipple: TuiStyle.surfacePressed
+            borderWidth: 1
+            borderColor: TuiStyle.panelAlt
+
+            contentItem: StyledText {
+                anchors.centerIn: parent
+                text: root.downloadRunning ? "Downloading…" : "Redownload"
+                color: downloadBtn.enabled ? TuiStyle.fg : TuiStyle.fgSub
+                font.pixelSize: 13
+            }
+
+            onClicked: {
+                root.downloadRunning = true;
+                root.modelStatus = "checking";
+                root.venvStatus = "checking";
+                root.daemonStatus = "checking";
+                Quickshell.execDetached(["bash", "-c", `"${root.shareDir}/omd-voice-setup" && "${root.shareDir}/omd-voice-download"`]);
+                refreshTimer.restart();
+            }
+        }
+
+        RippleButton {
+            implicitHeight: root.itemHeight
+            implicitWidth: 80
+            buttonRadius: 6
+            horizontalPadding: root.hPadding
+            colBackground: "transparent"
+            colBackgroundHover: TuiStyle.surfaceHover
+            colRipple: TuiStyle.surfacePressed
+            borderWidth: 1
+            borderColor: TuiStyle.panelAlt
+
+            contentItem: StyledText {
+                anchors.centerIn: parent
+                text: "Refresh"
+                color: TuiStyle.fg
+                font.pixelSize: 13
+            }
+
+            onClicked: root.refreshAll()
+        }
+        RippleButton {
+            implicitHeight: root.itemHeight
+            implicitWidth: 120
+            buttonRadius: 6
+            horizontalPadding: root.hPadding
+            colBackground: "transparent"
+            colBackgroundHover: TuiStyle.surfaceHover
+            colRipple: TuiStyle.surfacePressed
+            borderWidth: 1
+            borderColor: TuiStyle.panelAlt
+
+            contentItem: RowLayout {
+                anchors.fill: parent
+                anchors.leftMargin: root.hPadding
+                anchors.rightMargin: root.hPadding
+                spacing: 6
+                StyledText {
+                    text: NerdIconMap.keyboard
+                    color: TuiStyle.fg
+                    font.pixelSize: 14
+                    Layout.alignment: Qt.AlignVCenter
+                }
+                StyledText {
+                    text: "Edit Hotkeys"
+                    color: TuiStyle.fg
+                    font.pixelSize: 13
+                    Layout.fillWidth: true
+                    Layout.alignment: Qt.AlignVCenter
+                }
+            }
+
+            onClicked: {
                 root.close();
-        }
-
-        StyledRectangularShadow {
-            target: popupBackground
-            opacity: popupBackground.opacity
-        }
-
-        Rectangle {
-            id: popupBackground
-            anchors {
-                left: parent.left
-                right: parent.right
-                top: parent.top
-                margins: root.outerPadding
-            }
-            color: TuiStyle.bg
-            radius: TuiStyle.shellRadius
-            border.width: TuiStyle.borderWidth
-            border.color: TuiStyle.menuBorder
-            clip: true
-
-            layer.enabled: true
-            layer.effect: OpacityMask {
-                maskSource: Rectangle {
-                    width: popupBackground.width
-                    height: popupBackground.height
-                    radius: popupBackground.radius
-                }
-            }
-
-            opacity: 0
-            Component.onCompleted: opacity = 1
-            implicitWidth: columnLayout.implicitWidth + root.menuPadding * 2
-            implicitHeight: columnLayout.implicitHeight + root.menuPadding * 2
-
-            Behavior on opacity { animation: Appearance.animation.elementMoveFast.numberAnimation.createObject(popupBackground) }
-            Behavior on implicitHeight { animation: Appearance.animation.elementResize.numberAnimation.createObject(popupBackground) }
-            Behavior on implicitWidth { animation: Appearance.animation.elementResize.numberAnimation.createObject(popupBackground) }
-
-            ColumnLayout {
-                id: columnLayout
-                anchors {
-                    fill: parent
-                    margins: root.menuPadding
-                }
-                spacing: 0
-
-                // Title
-                Item {
-                    Layout.fillWidth: true
-                    implicitHeight: root.itemHeight
-                    StyledText {
-                        anchors.centerIn: parent
-                        text: "Offline Model Status"
-                        color: TuiStyle.fg
-                        font { pixelSize: 14; weight: Font.Medium }
-                    }
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: 1
-                    color: TuiStyle.line
-                    opacity: TuiStyle.dividerOpacity
-                    Layout.topMargin: 2
-                    Layout.bottomMargin: 6
-                }
-
-                // ── Status rows ──
-                component StatusRow : Item {
-                    property string label: ""
-                    property string status: "checking"
-                    property string detail: ""
-
-                    implicitHeight: root.itemHeight
-                    Layout.fillWidth: true
-
-                    RowLayout {
-                        anchors.fill: parent
-                        anchors.leftMargin: root.hPadding
-                        anchors.rightMargin: root.hPadding
-                        spacing: 8
-
-                        StyledText {
-                            text: root.indicator(parent.parent.status)
-                            color: root.indicatorColor(parent.parent.status)
-                            font.pixelSize: root.indicatorSize
-                            Layout.preferredWidth: root.indicatorSize
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        StyledText {
-                            text: parent.parent.label
-                            color: TuiStyle.fg
-                            font.pixelSize: 13
-                            Layout.fillWidth: true
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-
-                        StyledText {
-                            text: parent.parent.detail
-                            color: TuiStyle.fgSub
-                            font.pixelSize: 12
-                            visible: parent.parent.detail.length > 0
-                            Layout.alignment: Qt.AlignVCenter
-                        }
-                    }
-                }
-
-                StatusRow {
-                    label: "Model File (SenseVoice)"
-                    status: root.modelStatus
-                    detail: root.modelSize
-                }
-
-                StatusRow {
-                    label: "Python Virtual Environment"
-                    status: root.venvStatus
-                    detail: root.venvStatus === "ok" ? "Ready" : ""
-                }
-
-                StatusRow {
-                    label: "Voice Daemon"
-                    status: root.daemonStatus
-                    detail: root.daemonStatus === "ok" ? "Running" : root.daemonStatus === "idle" ? "Auto-start on use" : ""
-                }
-
-                Rectangle {
-                    Layout.fillWidth: true
-                    implicitHeight: 1
-                    color: TuiStyle.line
-                    opacity: TuiStyle.dividerOpacity
-                    Layout.topMargin: 6
-                    Layout.bottomMargin: 4
-                }
-
-                // ── Action buttons ──
-                RowLayout {
-                    Layout.fillWidth: true
-                    Layout.topMargin: 2
-                    Layout.bottomMargin: 2
-                    spacing: 6
-
-                    Item { Layout.fillWidth: true }
-
-                    RippleButton {
-                        id: downloadBtn
-                        enabled: !root.downloadRunning
-                        implicitHeight: root.itemHeight
-                        implicitWidth: 120
-                        buttonRadius: 6
-                        horizontalPadding: root.hPadding
-                        colBackground: "transparent"
-                        colBackgroundHover: TuiStyle.surfaceHover
-                        colRipple: TuiStyle.surfacePressed
-                        borderWidth: 1
-                        borderColor: TuiStyle.panelAlt
-
-                        contentItem: StyledText {
-                            anchors.centerIn: parent
-                            text: root.downloadRunning ? "Downloading…" : "Redownload"
-                            color: downloadBtn.enabled ? TuiStyle.fg : TuiStyle.fgSub
-                            font.pixelSize: 13
-                        }
-
-                        onClicked: {
-                            root.downloadRunning = true;
-                            root.modelStatus = "checking";
-                            root.venvStatus = "checking";
-                            root.daemonStatus = "checking";
-                            Quickshell.execDetached(["bash", "-c", `"${root.shareDir}/omd-voice-setup" && "${root.shareDir}/omd-voice-download"`]);
-                            // Re-check after a delay
-                            refreshTimer.restart();
-                        }
-                    }
-
-                    RippleButton {
-                        implicitHeight: root.itemHeight
-                        implicitWidth: 80
-                        buttonRadius: 6
-                        horizontalPadding: root.hPadding
-                        colBackground: "transparent"
-                        colBackgroundHover: TuiStyle.surfaceHover
-                        colRipple: TuiStyle.surfacePressed
-                        borderWidth: 1
-                        borderColor: TuiStyle.panelAlt
-
-                        contentItem: StyledText {
-                            anchors.centerIn: parent
-                            text: "Refresh"
-                            color: TuiStyle.fg
-                            font.pixelSize: 13
-                        }
-
-                        onClicked: root.refreshAll()
-                    }
-                    RippleButton {
-                        implicitHeight: root.itemHeight
-                        implicitWidth: 120
-                        buttonRadius: 6
-                        horizontalPadding: root.hPadding
-                        colBackground: "transparent"
-                        colBackgroundHover: TuiStyle.surfaceHover
-                        colRipple: TuiStyle.surfacePressed
-                        borderWidth: 1
-                        borderColor: TuiStyle.panelAlt
-
-                        contentItem: RowLayout {
-                            anchors.fill: parent
-                            anchors.leftMargin: root.hPadding
-                            anchors.rightMargin: root.hPadding
-                            spacing: 6
-                            StyledText {
-                                text: NerdIconMap.keyboard
-                                color: TuiStyle.fg
-                                font.pixelSize: 14
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-                            StyledText {
-                                text: "Edit Hotkeys"
-                                color: TuiStyle.fg
-                                font.pixelSize: 13
-                                Layout.fillWidth: true
-                                Layout.alignment: Qt.AlignVCenter
-                            }
-                        }
-
-                        onClicked: {
-                            root.close();
-                            Quickshell.execDetached(["bash", "-c",
-                                `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/omd-edit-voice-bindings"`]);
-                        }
-                    }
-                }
+                Quickshell.execDetached(["bash", "-c",
+                    `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/omd-edit-voice-bindings"`]);
             }
         }
     }

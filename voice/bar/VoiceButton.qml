@@ -66,7 +66,7 @@ Item {
 
         // Right click: show context menu
         altAction: function(event) {
-            menuLoader.active = !menuLoader.active;
+            menuLoader.open();
         }
 
 
@@ -163,23 +163,9 @@ Item {
         if (root.isError)
             recordingBlink.start();
     }
-    // Right-click: context menu loader
-    Loader {
+    BarContextMenu {
         id: menuLoader
-        active: false
-        source: "VoiceContextMenu.qml"
-        onLoaded: {
-            const a = item.anchor;
-            a.window = root.QsWindow.window;
-            a.item = button;
-            a.gravity = Config.options.bar.vertical
-                ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
-            a.edges = Config.options.bar.vertical
-                ? (Config.options.bar.bottom ? Edges.Left : Edges.Right)
-                : (Config.options.bar.bottom ? Edges.Top : Edges.Bottom);
-            item.open();
-            item.menuClosed.connect(() => menuLoader.active = false);
-        }
+        anchorItem: button
+        sourceComponent: VoiceContextMenu {}
     }
 }
