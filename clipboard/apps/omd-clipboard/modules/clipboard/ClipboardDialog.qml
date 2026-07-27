@@ -1,3 +1,4 @@
+
 import "widgets"
 import "../../services"
 import QtQuick
@@ -16,7 +17,7 @@ Item {
     property var screen: null
     // "cursor" follows the mouse; "bar" anchors to the top-right of the bar.
     property string positionMode: "cursor"
-    property real barHeight: 32
+    property real barHeight: Appearance.sizes.barHeight
     property int keyboardIndex: 0
     property int hoveredIndex: -1
     // Suppress hover-driven selection right after the menu appears. The menu
@@ -28,8 +29,12 @@ Item {
     property string debouncedSearch: ""
     property bool previewRequested: false
     signal dismiss()
-
     readonly property int edgeMargin: 14
+    // Gap constants match BarPopupGeometry (barGap=4, rightGap=4) — kept
+    // locally because this separate Quickshell process can't import the
+    // shared qs.modules.common.qml types.
+    readonly property int barRightMargin: 4
+    readonly property int barTopGap: 4
     readonly property int menuWidth: Math.min(460, Math.max(340, width - edgeMargin * 2))
     readonly property int previewWidth: Math.min(380, Math.max(300, width - edgeMargin * 2))
     readonly property int maxVisibleRows: Math.floor(((screen?.height ?? 720) * 0.7 - 80) / 34)
@@ -60,10 +65,12 @@ Item {
     function placeAtBar() {
         if (!menuCard)
             return;
-        menuCard.x = clamp(width - menuWidth - edgeMargin, edgeMargin, Math.max(edgeMargin, width - menuWidth - edgeMargin));
-        menuCard.y = barHeight + edgeMargin + 4;
+        // Align right edge and top with all bar popups (constants match BarPopupGeometry)
+        // Use local gap constants — this separate process can't import qs.modules.common.
+        menuCard.x = clamp(width - menuWidth - barRightMargin, barRightMargin,
+            Math.max(barRightMargin, width - menuWidth - barRightMargin));
+        menuCard.y = barHeight + barTopGap + 10; // elevationMargin = 10
     }
-
     function pasteSelected(asPath) {
         if (selectedEntry === "")
             return;

@@ -73,6 +73,10 @@ case "${1:-toggle}" in
         fi
         ;;
     toggle-at-bar)
+        # $2 = optional bar height from caller (ClipboardButton.qml passes Appearance.sizes.barHeight)
+        if [ -n "${2:-}" ]; then
+            export OMD_CLIPBOARD_BAR_HEIGHT="$2"
+        fi
         if is_running; then
             ipc_call toggleAtBar "${OMD_CLIPBOARD_BAR_HEIGHT:-32}"
         else

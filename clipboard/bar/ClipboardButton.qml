@@ -12,7 +12,9 @@ BarModuleButton {
         if (Date.now() - GlobalStates.barPopupDismissedAt < 200) return;
         Quickshell.execDetached([
             "omd-clipboard",
-            "toggle-at-bar"
+            "toggle-at-bar",
+            // Pass actual bar height so clipboard positions at the same Y as BarStatusPopup.
+            String(Appearance.sizes.barHeight)
         ]);
     }
 }
