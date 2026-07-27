@@ -1,0 +1,3 @@
+#!/usr/bin/env bash
+set -euo pipefail
+exec omd-launch-tui omd-settings-tui wallpaper

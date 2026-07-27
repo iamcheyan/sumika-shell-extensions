@@ -1,0 +1,21 @@
+{
+  "schemaVersion": 2,
+  "id": "theme-settings",
+  "name": "Theme Settings",
+  "description": "Theme picker, effects, and color scheme management",
+  "version": "2.0.0",
+  "kind": "shared",
+  "contributes": {
+    "launchers": [
+      {
+        "id": "sumika-theme-settings",
+        "name": "Theme Settings",
+        "comment": "Browse, preview, and apply desktop themes; adjust window effects",
+        "exec": "omd-launch-settings-theme-tui",
+        "categories": ["Settings", "DesktopSettings"],
+        "terminal": false,
+        "startupWmClass": "org.omd.themetui"
+      }
+    ]
+  }
+}

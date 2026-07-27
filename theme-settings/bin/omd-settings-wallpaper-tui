@@ -1,0 +1,314 @@
+#!/usr/bin/env python3
+"""omd-settings-wallpaper-tui — Wallpaper settings TUI (standalone).
+
+Single-column stacked layout matching the wifi/bluetooth TUI pattern:
+  Hero → large Preview → compact Controls → Help bar.
+
+Uses the shared omd_tui_framework for all rendering, image preview,
+color conversion, and event loop management.
+
+Controls
+  Tab        Switch focus (preview / controls)
+  j / ↓      Move down (in controls)
+  k / ↑      Move up (in controls)
+  Enter      Apply / select highlighted action
+  f          Pick file
+  d          Pick folder
+  c          Solid color
+  w          Next wallpaper (folder mode)
+  x          Stop rotation
+  [ / -      Decrease interval
+  ] / =      Increase interval
+  r          Refresh
+  q / Esc    Quit
+"""
+
+import curses
+import os
+import sys
+from pathlib import Path
+
+SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+# omd_tui_framework lives in OMD core's bin/. Resolve the core root from env
+# OMD_ROOT or the ~/.config/omd symlink the core repo installs.
+REPO_ROOT = os.environ.get("OMD_ROOT") or os.path.expanduser("~/.config/omd")
+sys.path.insert(0, os.path.join(REPO_ROOT, "bin"))
+import omd_tui_framework as S
+
+_THEME_CMD = os.path.join(SCRIPT_DIR, "omd-settings-theme")
+
+
+# ── helpers ────────────────────────────────────────────────────────────────
+
+def interval_label(s):
+    sec = S.parse_int(s)
+    if sec == 0:
+        sec = 3600
+    if sec >= 3600:
+        return f"{sec // 3600}h"
+    if sec >= 60:
+        return f"{sec // 60}m"
+    return f"{sec}s"
+
+
+def action_message(action):
+    mapping = {
+        "wallpaper-next": "Wallpaper changed",
+        "wallpaper-stop": "Wallpaper rotation stopped",
+        "wallpaper-pick-file": "Wallpaper selected",
+        "wallpaper-pick-folder": "Wallpaper folder selected",
+        "wallpaper-set-color": "Solid color set",
+    }
+    if action.startswith("wallpaper-interval"):
+        return "Wallpaper interval updated"
+    return mapping.get(action, "Done")
+
+
+# ── model ──────────────────────────────────────────────────────────────────
+
+F_PREVIEW = 0
+F_CONTROLS = 1
+
+
+class Model(S.StatusModel):
+    def __init__(self):
+        super().__init__()
+        self.focus = F_CONTROLS
+        self.selected = 0
+        self.refresh()
+
+    def refresh(self):
+        if self.refreshing:
+            return
+        self.refreshing = True
+        self.dirty = True
+
+        def cb(lines, err):
+            if err:
+                self.err = f"Status refresh failed: {err}"
+            else:
+                self.status = S.parse_kv(lines)
+            self.refreshing = False
+            self.dirty = True
+        S.run_cmd_bg(_THEME_CMD, "appearance-status", callback=cb)
+
+    def run_action(self, action, *extra):
+        self.busy = True
+        self.message = f"{action}…"
+        self.dirty = True
+
+        def cb(lines, err):
+            self.busy = False
+            if err:
+                self.message = "Done"
+                self.err = str(err) if err else ""
+            else:
+                self.message = action_message(action)
+                self.err = ""
+            self.dirty = True
+            self.refresh()
+        S.run_cmd_bg(_THEME_CMD, action, *extra, callback=cb)
+
+    def interval(self, delta):
+        cur = S.parse_int(self.val("wallpaper.interval", "3600"))
+        if cur == 0:
+            cur = 3600
+        nv = cur + delta
+        if nv < 300:
+            nv = 300
+        if nv > 7200:
+            nv = 7200
+        self.run_action("wallpaper-interval", str(nv))
+
+
+# ── rendering ──────────────────────────────────────────────────────────────
+
+def _hero(model):
+    mode = model.val("wallpaper.mode", "file")
+    wp = model.val("wallpaper.current", "")
+    wp_name = os.path.basename(wp) if wp else "No wallpaper"
+    if mode == "folder":
+        interval = interval_label(model.val("wallpaper.interval", "3600"))
+        subtitle = f"{wp_name} · rotating every {interval}"
+    elif mode == "color":
+        subtitle = f"Solid color · #{model.val('accent', '000000')}"
+    else:
+        subtitle = f"{wp_name} · single image"
+    msg = ""
+    if model.err:
+        msg = model.err
+    elif model.message and not model.busy:
+        msg = model.message
+    return S.hero_line("Wallpaper", subtitle, "ok", model.busy, msg, "")
+
+
+def _build_controls(model, width):
+    """Build compact horizontal control bar: mode + actions on single lines."""
+    mode = model.val("wallpaper.mode", "file")
+    lines = []
+
+    # ── Mode line (horizontal) ──
+    mode_labels = {"file": "File", "folder": "Folder", "color": "Color"}
+    mode_keys = {"file": "f", "folder": "d", "color": "c"}
+    parts = []
+    for val in ("file", "folder", "color"):
+        label = f"{mode_labels[val]} ({mode_keys[val]})"
+        parts.append(f"[{label}]" if val == mode else label)
+    lines.append(("text", "Mode: " + "  ".join(parts)))
+    lines.append(("text", ""))
+
+    # ── Actions line (horizontal) ──
+    if mode == "file":
+        actions = [
+            ("Pick file", "f", 0),
+            ("Pick folder", "d", 1),
+            ("Solid color", "c", 2),
+        ]
+    elif mode == "folder":
+        actions = [
+            ("Pick folder", "d", 0),
+            ("Next wallpaper", "w", 1),
+            ("Stop rotation", "x", 2),
+            ("Interval", "[-/+]", 3),
+            ("Pick file", "f", 4),
+            ("Solid color", "c", 5),
+        ]
+    else:
+        actions = [
+            ("Solid color", "c", 0),
+            ("Pick file", "f", 1),
+            ("Pick folder", "d", 2),
+        ]
+
+    action_parts = []
+    for label, key, idx in actions:
+        is_sel = model.focus == F_CONTROLS and model.selected == idx
+        entry = f"\u25cf {label} ({key})" if is_sel else f"{label} ({key})"
+        action_parts.append(entry)
+
+    tag = "focus" if model.focus == F_CONTROLS else "text"
+    lines.append((tag, "Actions: " + " \u00b7 ".join(action_parts)))
+
+    return lines
+
+
+def _help(model):
+    # Only show keys NOT already visible in the controls panel above.
+    # Controls shows every action key, so help bar only needs generic:
+    # Tab (switch), Enter (apply), q (quit), r (refresh)
+    return [("tab", "switch"), ("enter", "apply"), ("q", "quit"), ("r", "refresh")]
+
+def _view(stdscr, m):
+    h, w = stdscr.getmaxyx()
+    stdscr.erase()
+
+    if not S.require_terminal_size(stdscr, 50, 14):
+        return
+
+    margin = 1
+    hero_h = 2
+    help_h = 1
+    content_top = hero_h + margin
+    content_h = h - content_top - help_h
+    box_w = w - margin * 2
+
+    # Controls: horizontal layout, fixed compact height
+    controls_lines = _build_controls(m, box_w - 4)
+    controls_h = min(len(controls_lines) + 2, max(5, content_h // 3))
+    preview_h = content_h - controls_h
+
+    # ── Hero ──
+    S.draw_hero(stdscr, _hero(m))
+    y = content_top
+
+    # ── Preview (large, top section) ──
+    S.draw_focus_border(stdscr, m.focus == F_PREVIEW, y, margin, preview_h, box_w, "Preview")
+
+    mode = m.val("wallpaper.mode", "file")
+    if mode == "color":
+        # Color mode: fill preview area with a solid color swatch
+        bg_hex = m.val("accent", "000000")
+        S.draw_color_swatch(stdscr, y + 1, margin + 2, box_w - 4, preview_h - 2, bg_hex)
+    else:
+        # Image mode: render the wallpaper image
+        inner_y = y + 1
+        inner_x = margin + 2
+        inner_h = preview_h - 2
+        inner_w = box_w - 4
+        wp_path = m.val("wallpaper.current", "")
+        rendered = S.draw_image_preview(stdscr, wp_path, inner_y, inner_x, inner_w, inner_h)
+        if not rendered and inner_h > 0:
+            fname = os.path.basename(wp_path) if wp_path else "No wallpaper"
+            S.safe_addstr(stdscr, inner_y, inner_x,
+                          S.truncate(fname, inner_w), S.ATTR_MUTED)
+
+    y += preview_h
+
+    # ── Controls (compact, bottom section) ──
+    S.draw_focus_border(stdscr, m.focus == F_CONTROLS, y, margin, controls_h, box_w, "Controls")
+    S.draw_lines_in_area(stdscr, y, margin, controls_h, box_w, controls_lines)
+
+    # ── Single-line help bar (only generic keys not shown in controls) ──
+    help_parts = [f"{k}: {v}" for k, v in _help(m)]
+    S.safe_addstr(stdscr, h - 1, 2, "  ".join(help_parts), S.ATTR_SUBTLE)
+    S.finish_frame(stdscr)
+
+
+# ── key handler ──────────────────────────────────────────────────────────
+
+def _handle_key(stdscr, m, key):
+    if key in (ord('q'), 27):
+        return False
+
+    # Tab: switch between preview and controls
+    if S.handle_tab(key, m, count=2):
+        return True
+
+    # Global action keys (work in either focus)
+    if key == ord('r'):
+        m.refresh()
+        m.dirty = True
+        return True
+    if key == ord('f') and not m.busy:
+        m.run_action("wallpaper-pick-file")
+        return True
+    if key == ord('d') and not m.busy:
+        m.run_action("wallpaper-pick-folder")
+        return True
+    if key == ord('c') and not m.busy:
+        m.run_action("wallpaper-set-color")
+        return True
+    if key == ord('w') and not m.busy:
+        m.run_action("wallpaper-next")
+        return True
+    if key == ord('x') and not m.busy:
+        m.run_action("wallpaper-stop")
+        return True
+    if key in (ord('['), ord('-')) and not m.busy:
+        m.interval(-300)
+        return True
+    if key in (ord(']'), ord('=')) and not m.busy:
+        m.interval(300)
+        return True
+
+    # Navigation in controls panel
+    if m.focus == F_CONTROLS:
+        if key in (curses.KEY_UP, ord('k')):
+            m.selected = max(0, m.selected - 1)
+            m.dirty = True
+            return True
+        if key in (curses.KEY_DOWN, ord('j')):
+            m.selected = min(5, m.selected + 1)
+            m.dirty = True
+            return True
+
+    m.dirty = True
+    return True
+
+
+def main(stdscr):
+    S.run_tui_loop(stdscr, Model(), _view, _handle_key, poll_timeout=200)
+
+
+if __name__ == "__main__":
+    curses.wrapper(main)

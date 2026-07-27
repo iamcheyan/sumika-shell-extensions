@@ -1,0 +1,54 @@
+#!/usr/bin/env bash
+# omd-launch-settings-theme-tui — Launch the theme settings TUI
+# Follows the same unified TUI framework as file-backup, keyboard-remap, etc.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TUI_SCRIPT="${SCRIPT_DIR}/omd-settings-theme-tui"
+
+if [[ ! -f "$TUI_SCRIPT" ]]; then
+  echo "omd-settings-theme-tui not found at $TUI_SCRIPT" >&2
+  exit 1
+fi
+
+if ! command -v python3 >/dev/null 2>&1; then
+  echo "python3 not found" >&2
+  exit 1
+fi
+
+run_tui() {
+  exec python3 "$TUI_SCRIPT"
+}
+
+# Prefer xdg-terminal-exec with a dedicated app-id for Hyprland floating rules.
+if command -v uwsm-app >/dev/null 2>&1 && command -v xdg-terminal-exec >/dev/null 2>&1; then
+  exec setsid uwsm-app -- xdg-terminal-exec --app-id=org.omd.themetui -e python3 "$TUI_SCRIPT"
+fi
+
+if command -v xdg-terminal-exec >/dev/null 2>&1; then
+  exec xdg-terminal-exec --app-id=org.omd.themetui -e python3 "$TUI_SCRIPT"
+fi
+
+if command -v foot >/dev/null 2>&1 && foot --version >/dev/null 2>&1; then
+  exec foot --app-id=org.omd.themetui -e python3 "$TUI_SCRIPT"
+fi
+
+if command -v kitty >/dev/null 2>&1; then
+  exec kitty --class=org.omd.themetui -e python3 "$TUI_SCRIPT"
+fi
+
+if command -v alacritty >/dev/null 2>&1; then
+  exec alacritty --class org.omd.themetui -e python3 "$TUI_SCRIPT"
+fi
+
+if command -v gnome-terminal >/dev/null 2>&1; then
+  exec gnome-terminal -- python3 "$TUI_SCRIPT"
+fi
+
+if command -v konsole >/dev/null 2>&1; then
+  exec konsole -e python3 "$TUI_SCRIPT"
+fi
+
+run_tui
+
