@@ -16,7 +16,7 @@ ColumnLayout {
     id: pageRoot
 
     required property var settingsRoot
-    readonly property string omdRoot: `${FileUtils.trimFileProtocol(Directories.config)}/omd`
+    readonly property string sumikaRoot: Directories.root
     readonly property string bindingsPath: `${FileUtils.trimFileProtocol(StandardPaths.home)}/.config/voice_bindings.txt`
     readonly property bool wideLayout: width >= 980
 
@@ -587,10 +587,7 @@ ColumnLayout {
                         SettingsButton {
                             label: "Edit in TUI"
                             iconName: "open_in_new"
-                            onClicked: pageRoot.openExternal([
-                                "sumika-launch-tui",
-                                `${pageRoot.omdRoot}/scripts/voice-bind-tui`
-                            ])
+                            onClicked: pageRoot.openExternal(["sumika-launch-settings-voice-tui"])
                         }
                     }
                 }
@@ -628,10 +625,7 @@ ColumnLayout {
                         SettingsButton {
                             label: "Full diagnose"
                             iconName: "open_in_new"
-                            onClicked: pageRoot.openExternal([
-                                "sumika-launch-tui",
-                                `${pageRoot.omdRoot}/scripts/voice-diagnose`
-                            ])
+                            onClicked: pageRoot.openExternal(["sumika-launch-settings-voice-tui"])
                         }
                     }
                 }
@@ -670,18 +664,12 @@ ColumnLayout {
                         SettingsButton {
                             label: "TUI test"
                             iconName: "open_in_new"
-                            onClicked: pageRoot.openExternal([
-                                "sumika-launch-tui",
-                                `${pageRoot.omdRoot}/scripts/voice-test-tui`
-                            ])
+                            onClicked: pageRoot.openExternal(["sumika-launch-settings-voice-tui"])
                         }
                         SettingsButton {
                             label: "Diagnose"
                             iconName: "open_in_new"
-                            onClicked: pageRoot.openExternal([
-                                "sumika-launch-tui",
-                                `${pageRoot.omdRoot}/scripts/voice-diagnose`
-                            ])
+                            onClicked: pageRoot.openExternal(["sumika-launch-settings-voice-tui"])
                         }
                     }
                 }
@@ -723,7 +711,7 @@ ColumnLayout {
     // Capture stays over Settings; on close we read state/clipboard and append.
     Process {
         id: captureKeyProc
-        command: [`${pageRoot.omdRoot}/scripts/key-test-launcher`, "--hotkey"]
+        command: [`${pageRoot.sumikaRoot}/scripts/key-test-launcher`, "--hotkey"]
         running: false
         onExited: {
             readCaptureProc.running = true

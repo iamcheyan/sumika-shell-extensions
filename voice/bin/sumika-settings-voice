@@ -17,8 +17,6 @@ LAUNCH_TUI="$(_find_tool sumika-launch-tui)"
 KEY_CAPTURE="$(command -v key-test-launcher 2>/dev/null || echo "$SCRIPT_DIR/key-test-launcher")"
 VOICE_BIND_TUI="$(command -v voice-bind-tui 2>/dev/null || echo "$SCRIPT_DIR/voice-bind-tui")"
 VOICE_EDIT_BINDINGS="$(_find_tool sumika-edit-voice-bindings)"
-VOICE_DIAGNOSE="$(command -v voice-diagnose 2>/dev/null || echo "$SCRIPT_DIR/voice-diagnose")"
-VOICE_TEST_TUI="$(command -v voice-test-tui 2>/dev/null || echo "$SCRIPT_DIR/voice-test-tui")"
 VOICE_SETUP="$(_find_tool omarchy-voice-setup)"
 VOICE_DOWNLOAD="$(_find_tool omarchy-voice-download)"
 
@@ -412,7 +410,7 @@ remove_binding() {
 }
 
 record() {
-  launch_tui "$VOICE_TEST_TUI"
+  launch_tui "$SCRIPT_DIR/sumika-settings-voice-tui"
   kv result "test-opened"
 }
 

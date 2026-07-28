@@ -18,7 +18,7 @@ PopupColumn {
         title: "Backup Settings"
         subtitle: "Manage SMB shares and backups"
         onClicked: {
-            Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/sumika-launch-settings-backup-tui`]);
+            Quickshell.execDetached(["sumika-launch-settings-backup-tui"]);
         }
     }
 }

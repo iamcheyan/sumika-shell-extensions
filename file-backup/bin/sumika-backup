@@ -10,21 +10,6 @@ SUMIKA_SHELL_ROOT="${SUMIKA_SHELL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.."
 CONFIG_DIR="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sumika-shell}/file-share-backup"
 STATE_DIR="${SUMIKA_SHELL_STATE_HOME:-${XDG_STATE_HOME:-$HOME/.local/state}/sumika-shell}/file-share-backup"
 
-# Legacy fallback paths for reads (removed in Phase 7)
-_LEGACY_CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/omd/file-share-backup"
-_LEGACY_STATE_DIR="${XDG_STATE_HOME:-$HOME/.local/state}/omd/file-share-backup"
-
-# Copy legacy data to the canonical location if central migration has not run.
-# Keep the source intact until the explicit migration cleanup phase.
-if [[ -d "$_LEGACY_CONFIG_DIR" && ! -d "$CONFIG_DIR" ]]; then
-  mkdir -p "$(dirname "$CONFIG_DIR")"
-  cp -a "$_LEGACY_CONFIG_DIR" "$CONFIG_DIR" 2>/dev/null || true
-fi
-if [[ -d "$_LEGACY_STATE_DIR" && ! -d "$STATE_DIR" ]]; then
-  mkdir -p "$(dirname "$STATE_DIR")"
-  cp -a "$_LEGACY_STATE_DIR" "$STATE_DIR" 2>/dev/null || true
-fi
-
 CONFIG_FILE="$CONFIG_DIR/config.json"
 CREDS_FILE="$STATE_DIR/.smbcreds"
 
@@ -63,8 +48,6 @@ load_config() {
   # Overlay with old config.json if it exists (takes precedence for migration)
   if [[ -f "$CONFIG_FILE" ]]; then
     merged=$(echo "$merged" | jq -c ". * $(cat "$CONFIG_FILE")" 2>/dev/null || cat "$CONFIG_FILE")
-  elif [[ -f "$_LEGACY_CONFIG_DIR/config.json" ]]; then
-    merged=$(echo "$merged" | jq -c ". * $(cat "$_LEGACY_CONFIG_DIR/config.json")" 2>/dev/null || cat "$_LEGACY_CONFIG_DIR/config.json")
   fi
   echo "$merged"
 }

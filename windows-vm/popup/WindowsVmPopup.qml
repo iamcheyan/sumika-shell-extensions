@@ -20,7 +20,7 @@ PopupColumn {
         subtitle: "Install, run and manage Windows"
         onClicked: {
             root.close();
-            Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/sumika-launch-settings-windows-tui`]);
+            Quickshell.execDetached(["sumika-launch-settings-windows-tui"]);
         }
     }
 }

@@ -297,7 +297,7 @@ PopupColumn {
         label: "Voice Settings…"
         onClicked: {
             GlobalStates.barPopupType = "";
-            Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/sumika-settings`, "open", "voice"]);
+            Quickshell.execDetached(["sumika-settings", "open", "voice"]);
         }
     }
 }
