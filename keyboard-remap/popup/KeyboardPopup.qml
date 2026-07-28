@@ -48,7 +48,7 @@ PopupColumn {
         label: "Keyboard settings…"
         onClicked: {
             root.close();
-            Quickshell.execDetached(["omd-launch-keyboard-tui"]);
+            Quickshell.execDetached(["sumika-launch-keyboard-tui"]);
         }
     }
 }

@@ -11,10 +11,10 @@
         "id": "sumika-theme-settings",
         "name": "Theme Settings",
         "comment": "Browse, preview, and apply desktop themes; adjust window effects",
-        "exec": "omd-launch-settings-theme-tui",
+        "exec": "sumika-launch-settings-theme-tui",
         "categories": ["Settings", "DesktopSettings"],
         "terminal": false,
-        "startupWmClass": "org.omd.themetui"
+        "startupWmClass": "io.github.iamcheyan.sumika.themetui"
       }
     ]
   }

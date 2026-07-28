@@ -29,7 +29,7 @@ Item {
 
         onClicked: {
             // Left click: quick screenshot (default action)
-            Quickshell.execDetached(["omd-screenshot"]);
+            Quickshell.execDetached(["sumika-screenshot"]);
         }
 
         // Right click: open context menu

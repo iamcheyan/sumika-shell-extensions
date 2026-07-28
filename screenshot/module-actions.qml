@@ -23,17 +23,17 @@ Item {
 
         ActionManager.register("screenshot.capture", "screenshot", "Take region screenshot", {
             type: "process",
-            command: ["omd-screenshot", "screenshot"]
+            command: ["sumika-screenshot", "screenshot"]
         }, {description: "Capture a selected screen region"})
 
         ActionManager.register("screenshot.capture-edit", "screenshot", "Take region screenshot and edit", {
             type: "process",
-            command: ["omd-screenshot", "edit"]
+            command: ["sumika-screenshot", "edit"]
         }, {description: "Capture a region and open in editor"})
 
         ActionManager.register("screenshot.capture-ocr", "screenshot", "Extract text from screenshot", {
             type: "process",
-            command: ["omd-screenshot", "ocr"]
+            command: ["sumika-screenshot", "ocr"]
         }, {description: "OCR text from a screen region"})
     }
 }

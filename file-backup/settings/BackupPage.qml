@@ -22,7 +22,7 @@ PageBody {
                 iconName: "cloud_upload"
                 onClicked: {
                     if (settingsRoot) settingsRoot.dismiss();
-                    Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/omd-launch-settings-backup-tui`]);
+                    Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/sumika-launch-settings-backup-tui`]);
                 }
             }
         }

@@ -12,7 +12,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.cpu
         labelText: "Model Manager (TUI)"
         onClicked: {
-            Quickshell.execDetached(["omd-launch-settings-voice-tui"]);
+            Quickshell.execDetached(["sumika-launch-settings-voice-tui"]);
             root.close();
         }
     }
@@ -23,7 +23,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.keyboard
         labelText: "Edit Keybindings"
         onClicked: {
-            Quickshell.execDetached(["omd-edit-voice-bindings"]);
+            Quickshell.execDetached(["sumika-edit-voice-bindings"]);
             root.close();
         }
     }

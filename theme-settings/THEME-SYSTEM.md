@@ -25,10 +25,10 @@ The current active theme is recorded in:
 
 ```text
 module.json
-  -> omd-launch-settings-theme-tui
+  -> sumika-launch-settings-theme-tui
   -> terminal application
-  -> omd-settings-theme-tui
-  -> omd-settings-theme apply <theme>
+  -> sumika-settings-theme-tui
+  -> sumika-settings-theme apply <theme>
 ```
 
 The launcher uses a terminal cascade. It prefers `uwsm-app` and
@@ -36,7 +36,7 @@ The launcher uses a terminal cascade. It prefers `uwsm-app` and
 GNOME Terminal, and Konsole. The dedicated application ID is:
 
 ```text
-org.omd.themetui
+io.github.iamcheyan.sumika.themetui
 ```
 
 The runtime module registry identifies this extension as an external shared
@@ -47,13 +47,13 @@ module. It has no QML entry point and no actions provider.
 | File | Responsibility |
 | --- | --- |
 | `module.json` | Extension metadata and launcher registration. |
-| `bin/omd-launch-settings-theme-tui` | Finds a terminal and launches the theme TUI. |
-| `bin/omd-settings-theme-tui` | Python curses frontend for browsing and applying themes. |
-| `bin/omd-settings-theme` | Backend for listing, applying, repairing, and querying themes. |
-| `bin/omd-launch-settings-wallpaper-tui` | Launches the wallpaper TUI. |
-| `bin/omd-settings-wallpaper-tui` | Controls file, folder, color, interval, next, and stop actions. |
-| `bin/omd-wallpaper` | Sets wallpaper with `swaybg` and manages rotation. |
-| `bin/omd-theme-bg-set` | Imports a selected image into managed Sumika wallpaper state. |
+| `bin/sumika-launch-settings-theme-tui` | Finds a terminal and launches the theme TUI. |
+| `bin/sumika-settings-theme-tui` | Python curses frontend for browsing and applying themes. |
+| `bin/sumika-settings-theme` | Backend for listing, applying, repairing, and querying themes. |
+| `bin/sumika-launch-settings-wallpaper-tui` | Launches the wallpaper TUI. |
+| `bin/sumika-settings-wallpaper-tui` | Controls file, folder, color, interval, next, and stop actions. |
+| `bin/sumika-wallpaper` | Sets wallpaper with `swaybg` and manages rotation. |
+| `bin/sumika-theme-bg-set` | Imports a selected image into managed Sumika wallpaper state. |
 | `themes/<id>/colors.toml` | Required source colors for a theme. |
 | `themes/<id>/neovim.lua` | Neovim theme payload. |
 | `config/` | Reserved extension configuration area; currently no active configuration. |
@@ -63,7 +63,7 @@ module. It has no QML entry point and no actions provider.
 
 When the user selects a theme:
 
-1. The TUI calls `omd-settings-theme apply <id>`.
+1. The TUI calls `sumika-settings-theme apply <id>`.
 2. The backend copies the selected theme into:
 
    ```text
@@ -198,7 +198,7 @@ background
 renderer log
 ```
 
-`omd-wallpaper` uses `swaybg`. For folder mode it uses a user systemd
+`sumika-wallpaper` uses `swaybg`. For folder mode it uses a user systemd
 service/timer to select a random image at the configured interval. The
 managed `background` path is used so previews and desktop rendering continue
 to work even if the original source file is moved.
@@ -244,7 +244,7 @@ not currently render the optional preview PNG files as image previews.
 ## 9. Known Inconsistencies And Follow-up Work
 
 1. Some older documentation and `AGENTS.md` refer to
-   `~/development/OMD/share/themes/`. The actual runtime source is the
+   `~/development/Sumika Shell/share/themes/`. The actual runtime source is the
    extension directory documented above.
 2. Optional adapters are copied as resources but are not all automatically
    applied to their target applications.
@@ -254,7 +254,7 @@ not currently render the optional preview PNG files as image previews.
 5. The empty `config/` and `wallpaper/` directories should either receive a
    documented purpose or be removed.
 6. The extension currently calls core-facing commands such as `hyprctl`,
-   `omd-wallpaper`, Quickshell IPC, and terminal reload helpers. This is an
+   `sumika-wallpaper`, Quickshell IPC, and terminal reload helpers. This is an
    integration dependency and should remain explicit rather than being
    treated as a standalone extension guarantee.
 7. Theme apply currently generates only missing adapters. A future version
@@ -280,8 +280,8 @@ emphasis. They must not hard-code a theme accent in individual QML files.
 
 The fallback remains available when no theme extension or runtime adapter is
 present: the core uses its default light-gray accent and dark surfaces.
-Applying a theme refreshes the `omd-bar` and `omd-settings` entry points. The
-Overview and App Launcher are hosted by `omd-bar`, so they receive the same
+Applying a theme refreshes the `sumika-bar` and `sumika-settings` entry points. The
+Overview and App Launcher are hosted by `sumika-bar`, so they receive the same
 theme state without separate processes.
 
 When adding a new core component:

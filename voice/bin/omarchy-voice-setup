@@ -5,7 +5,7 @@ set -eu
 # omarchy:group=voice
 # omarchy:description=Creates a Python venv and installs sherpa-onnx + numpy
 
-VENV_DIR="${OMD_VOICE_VENV:-$HOME/.cache/omd-voice/venv}"
+VENV_DIR="${SUMIKA_VOICE_VENV:-$HOME/.cache/sumika-voice/venv}"
 
 if [ -f "$VENV_DIR/bin/python3" ] && "$VENV_DIR/bin/python3" -c "import sherpa_onnx, numpy" 2>/dev/null; then
     echo "venv-ready"

@@ -13,10 +13,10 @@
         "id": "sumika-file-backup",
         "name": "Sumika File Backup",
         "comment": "Configure and manage SMB file backups and sync",
-        "exec": "omd-launch-settings-backup-tui",
+        "exec": "sumika-launch-settings-backup-tui",
         "icon": "icon.png",
         "categories": ["System", "FileTools"],
-        "startupWmClass": "org.omd.backuptui"
+        "startupWmClass": "io.github.iamcheyan.sumika.backuptui"
       }
     ],
     "services": [],

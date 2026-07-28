@@ -272,7 +272,7 @@ ColumnLayout {
             s.mode = mode
             s.actionText = ""
             s.actionError = ""
-            windowsActionProc.command = ["bash", "-c", `omd-settings-windows-vm ${action}`]
+            windowsActionProc.command = ["bash", "-c", `sumika-settings-windows-vm ${action}`]
             windowsActionProc.running = true
         }
         function beginInstall() {
@@ -290,7 +290,7 @@ ColumnLayout {
             pageRoot.settingsRoot.dismiss()
             Quickshell.execDetached([
                 "bash", "-c",
-                `omd-settings-windows-vm ${keepAlive ? "launch-keepalive" : "launch"}`
+                `sumika-settings-windows-vm ${keepAlive ? "launch-keepalive" : "launch"}`
             ])
         }
         function parseBool(value) {
@@ -1153,7 +1153,7 @@ ColumnLayout {
 
     Process {
         id: windowsStatusProc
-        command: ["bash", "-c", "omd-settings-windows-vm status"]
+        command: ["bash", "-c", "sumika-settings-windows-vm status"]
         running: false
         stdout: StdioCollector {
             onStreamFinished: s.applyStatus(pageRoot.parseKeyValue(text))
@@ -1163,7 +1163,7 @@ ColumnLayout {
     Process {
         id: windowsInstallStatusProc
         running: false
-        command: ["bash", "-c", "omd-settings-windows-vm install-status"]
+        command: ["bash", "-c", "sumika-settings-windows-vm install-status"]
         stdout: StdioCollector {
             onStreamFinished: {
                 const d = pageRoot.parseKeyValue(text)
@@ -1191,7 +1191,7 @@ ColumnLayout {
     Process {
         id: windowsLogsProc
         running: false
-        command: ["bash", "-c", "omd-settings-windows-vm logs"]
+        command: ["bash", "-c", "sumika-settings-windows-vm logs"]
         stdout: StdioCollector { id: windowsLogsOutput }
     }
 

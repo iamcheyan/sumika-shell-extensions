@@ -13,7 +13,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.screenshot
         labelText: "Capture Area"
         onClicked: {
-            Quickshell.execDetached(["omd-screenshot", "screenshot"]);
+            Quickshell.execDetached(["sumika-screenshot", "screenshot"]);
             root.close();
         }
     }
@@ -22,7 +22,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.edit
         labelText: "Capture && Edit"
         onClicked: {
-            Quickshell.execDetached(["omd-screenshot", "edit"]);
+            Quickshell.execDetached(["sumika-screenshot", "edit"]);
             root.close();
         }
     }
@@ -32,7 +32,7 @@ ContextMenuWindow {
         labelText: "Capture Fullscreen"
         onClicked: {
             Quickshell.execDetached(["bash", "-c",
-                "f=$(mktemp /tmp/omd-screenshot-full.XXXXXX.png); " +
+                "f=$(mktemp /tmp/sumika-screenshot-full.XXXXXX.png); " +
                 "grim -o $(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name') \"$f\"; " +
                 "cliphist store < \"$f\" 2>/dev/null || true; " +
                 "wl-copy --type image/png < \"$f\"; " +
@@ -48,7 +48,7 @@ ContextMenuWindow {
         labelText: "Capture Monitor (3s delay)"
         onClicked: {
             Quickshell.execDetached(["bash", "-c",
-                "f=$(mktemp /tmp/omd-screenshot-delay.XXXXXX.png); " +
+                "f=$(mktemp /tmp/sumika-screenshot-delay.XXXXXX.png); " +
                 "monitor=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name'); " +
                 "notify-send -i camera-photo Screenshot \"Capturing current monitor in 3 seconds\"; " +
                 "sleep 3; " +
@@ -77,7 +77,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.video
         labelText: "Record Screen"
         onClicked: {
-            Quickshell.execDetached(["omd-screenshot", "record"]);
+            Quickshell.execDetached(["sumika-screenshot", "record"]);
             root.close();
         }
     }
@@ -88,7 +88,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.textDocument
         labelText: "OCR Recognize"
         onClicked: {
-            Quickshell.execDetached(["omd-screenshot", "ocr"]);
+            Quickshell.execDetached(["sumika-screenshot", "ocr"]);
             root.close();
         }
     }
@@ -97,7 +97,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.settings
         labelText: "OCR Settings"
         onClicked: {
-            Quickshell.execDetached(["omd-launch-ocr-tui"]);
+            Quickshell.execDetached(["sumika-launch-ocr-tui"]);
             root.close();
         }
     }

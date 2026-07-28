@@ -1,0 +1,537 @@
+#!/usr/bin/env python3
+"""Theme settings TUI — theme grid, apply, and palette integration.
+"""
+
+
+import curses
+import os
+import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+SUMIKA_SHELL_ROOT = os.environ.get("SUMIKA_SHELL_ROOT") or os.path.expanduser("~/.config/sumika-shell")
+sys.path.insert(0, os.path.join(SUMIKA_SHELL_ROOT, "bin"))
+import sumika_tui_framework as S
+_THEME_CMD = os.path.join(os.path.dirname(os.path.abspath(__file__)), "sumika-settings-theme")
+
+
+# ── color helpers ──────────────────────────────────────────────────────
+
+def _hex_to_rgb(hex6):
+    h = hex6.lstrip("#")
+    if len(h) != 6:
+        return None
+    try:
+        return (int(h[0:2], 16), int(h[2:4], 16), int(h[4:6], 16))
+    except ValueError:
+        return None
+
+
+def _rgb_to_hex(r, g, b):
+    return f"#{r:02x}{g:02x}{b:02x}"
+
+
+def _blend(hex_a, hex_b, amount):
+    """Blend two hex colors: result = a*(1-amount) + b*amount"""
+    a = _hex_to_rgb(hex_a)
+    b = _hex_to_rgb(hex_b)
+    if not a or not b:
+        return hex_a
+    r = int(a[0] * (1 - amount) + b[0] * amount)
+    g = int(a[1] * (1 - amount) + b[1] * amount)
+    bl = int(a[2] * (1 - amount) + b[2] * amount)
+    return _rgb_to_hex(min(255, r), min(255, g), min(255, bl))
+
+
+# ── color pair pools ──────────────────────────────────────────────────
+
+_C_TILE_BASE = S.C_THEME_START if hasattr(S, "C_THEME_START") else 11
+_MAX_TILE_PAIRS = 80
+
+_tile_pair_map = {}
+_next_tile_idx = [_C_TILE_BASE]
+_XTERM_LEVELS = (0, 95, 135, 175, 215, 255)
+_xterm_color_cache = {}
+
+
+def _xterm_rgb(index):
+    if 16 <= index <= 231:
+        value = index - 16
+        return (
+            _XTERM_LEVELS[value // 36],
+            _XTERM_LEVELS[(value // 6) % 6],
+            _XTERM_LEVELS[value % 6],
+        )
+    if 232 <= index <= 255:
+        level = 8 + (index - 232) * 10
+        return (level, level, level)
+    return (0, 0, 0)
+
+
+def _rgb_to_xterm_index(r, g, b):
+    ch = max(r, g, b) - min(r, g, b)
+    if ch <= 12:
+        gray = round((r + g + b) / 3 * 23 / 255)
+        return 232 + min(23, max(0, gray))
+    r6 = round(r * 5 / 255)
+    g6 = round(g * 5 / 255)
+    b6 = round(b * 5 / 255)
+    if g > r and g > b:
+        if g6 <= r6 and g6 < 5:
+            g6 += 1
+        if g6 <= b6 and g6 < 5:
+            g6 += 1
+    if r > g and r > b:
+        if r6 <= g6 and r6 < 5:
+            r6 += 1
+        if r6 <= b6 and r6 < 5:
+            r6 += 1
+    if b > r and b > g:
+        if b6 <= r6 and b6 < 5:
+            b6 += 1
+        if b6 <= g6 and b6 < 5:
+            b6 += 1
+    r6 = min(5, max(0, r6))
+    g6 = min(5, max(0, g6))
+    b6 = min(5, max(0, b6))
+    return 16 + 36 * r6 + 6 * g6 + b6
+
+
+def _get_tile_color_pair(fg_rgb, bg_rgb):
+    """Allocate a color pair from the tile swatch pool."""
+    fg_idx = _rgb_to_xterm_index(*fg_rgb)
+    bg_idx = _rgb_to_xterm_index(*bg_rgb)
+    key = (fg_idx, bg_idx)
+    if key in _tile_pair_map:
+        return _tile_pair_map[key]
+
+    tile_limit = min(
+        _C_TILE_BASE + _MAX_TILE_PAIRS,
+        max(_C_TILE_BASE, getattr(curses, "COLOR_PAIRS", 0)),
+    )
+    if getattr(curses, "COLORS", 0) < 256 or _next_tile_idx[0] >= tile_limit:
+        if _tile_pair_map:
+            nearest = min(
+                _tile_pair_map,
+                key=lambda k: (
+                    (fg_rgb[0] - _xterm_rgb(k[0])[0]) ** 2
+                    + (fg_rgb[1] - _xterm_rgb(k[0])[1]) ** 2
+                    + (fg_rgb[2] - _xterm_rgb(k[0])[2]) ** 2
+                    + (bg_rgb[0] - _xterm_rgb(k[1])[0]) ** 2
+                    + (bg_rgb[1] - _xterm_rgb(k[1])[1]) ** 2
+                    + (bg_rgb[2] - _xterm_rgb(k[1])[2]) ** 2
+                ),
+            )
+            _tile_pair_map[key] = _tile_pair_map[nearest]
+            return _tile_pair_map[nearest]
+        return 0
+
+    pair_idx = _next_tile_idx[0]
+    _next_tile_idx[0] += 1
+    try:
+        curses.init_pair(pair_idx, fg_idx, bg_idx)
+    except curses.error:
+        _tile_pair_map[key] = 0
+        return 0
+    _tile_pair_map[key] = pair_idx
+    return pair_idx
+
+
+def _get_theme_tile_pair(accent_hex, bg_hex, fg_hex, role):
+    """Return a curses color pair for a theme tile role."""
+    if role == "header":
+        fg_h, bg_h = fg_hex, accent_hex
+    else:
+        fg_h, bg_h = fg_hex, bg_hex
+    fg_rgb = _hex_to_rgb(fg_h)
+    bg_rgb = _hex_to_rgb(bg_h)
+    if not fg_rgb or not bg_rgb:
+        return 0
+    return _get_tile_color_pair(fg_rgb, bg_rgb)
+
+
+# ── palette cache ─────────────────────────────────────────────────────
+
+_palette_cache = {"bg": "", "fg": "", "accent": "", "pal": {}}
+
+
+def _get_palette(model):
+    bg = model.val("background", "")
+    fg = model.val("foreground", "")
+    accent = model.val("accent", "")
+    if (_palette_cache["bg"] == bg and _palette_cache["fg"] == fg and
+            _palette_cache["accent"] == accent):
+        return _palette_cache["pal"]
+    bg_c = bg if bg else "#050505"
+    fg_c = fg if fg else "#eeeeee"
+    accent_c = accent if accent else "#20d6c7"
+    pal = {
+        "background": bg_c,
+        "panel": _blend(bg_c, fg_c, 0.08),
+        "panel_soft": _blend(bg_c, fg_c, 0.14),
+        "line": _blend(bg_c, fg_c, 0.28),
+        "text": fg_c,
+        "muted": _blend(bg_c, fg_c, 0.68),
+        "accent": accent_c,
+    }
+    _palette_cache["bg"] = bg
+    _palette_cache["fg"] = fg
+    _palette_cache["accent"] = accent
+    _palette_cache["pal"] = pal
+    return pal
+
+
+# ── theme entry ───────────────────────────────────────────────────────
+
+class ThemeEntry:
+    __slots__ = ("slug", "name", "current", "accent", "background", "foreground")
+    def __init__(self, slug, name, current=False, accent="", background="", foreground=""):
+        self.slug = slug
+        self.name = name
+        self.current = current
+        self.accent = accent
+        self.background = background
+        self.foreground = foreground
+
+
+# ── model ─────────────────────────────────────────────────────────────
+
+class Model(S.StatusModel):
+    def __init__(self):
+        super().__init__()
+        self.themes = []
+        self.applying = ""
+        self.loaded = False
+        self.refresh()
+
+    def refresh(self):
+        if self.refreshing:
+            return
+        self.refreshing = True
+        self.dirty = True
+        pending = [2]
+
+        def complete():
+            pending[0] -= 1
+            if pending[0] == 0:
+                self.refreshing = False
+            self.dirty = True
+
+        def on_status(lines, err):
+            if err:
+                self.err = f"Status refresh failed: {err}"
+            else:
+                self.status = S.parse_kv(lines)
+            complete()
+
+        def on_themes(lines, err):
+            self.themes = []
+            for l in lines if not err else []:
+                parts = l.split("\t")
+                if len(parts) < 2:
+                    continue
+                slug = parts[0]
+                name = parts[1]
+                current = len(parts) > 3 and parts[3] == "current"
+                accent = parts[4] if len(parts) > 4 else ""
+                bg = parts[5] if len(parts) > 5 else ""
+                fg = parts[6] if len(parts) > 6 else ""
+                self.themes.append(ThemeEntry(slug, name, current, accent, bg, fg))
+            if not self.loaded:
+                for i, t in enumerate(self.themes):
+                    if t.current:
+                        self.selected = i
+                        break
+                self.loaded = True
+            self.selected = max(0, min(self.selected, len(self.themes) - 1))
+            if err:
+                self.err = f"Theme list failed: {err}"
+            complete()
+
+        S.run_cmd_bg(_THEME_CMD, "appearance-status", callback=on_status)
+        S.run_cmd_bg(_THEME_CMD, "list", callback=on_themes)
+
+    def apply_theme(self, slug):
+        self.busy = True
+        self.applying = slug
+        self.message = f"Applying {slug}…"
+        self.dirty = True
+
+        def cb(lines, err):
+            self.busy = False
+            self.applying = ""
+            if err:
+                self.err = "Theme apply failed"
+                self.message = ""
+            else:
+                self.message = "Theme applied"
+                self.err = ""
+            self.dirty = True
+            self.refresh()
+        S.run_cmd_bg(_THEME_CMD, "apply", slug, callback=cb)
+
+    def move_selection(self, delta):
+        if not self.themes:
+            self.selected = 0
+            return
+        self.selected += delta
+        self.selected = max(0, min(self.selected, len(self.themes) - 1))
+
+
+    def grid_columns(self, width):
+        if not self.themes:
+            return 1
+        longest = max(len(t.name) for t in self.themes)
+        tile_w = max(12, longest + 2)
+        gap = 2
+        cols = max(1, (width + gap) // (tile_w + 2 + gap))
+        return min(cols, len(self.themes), 6)
+
+    def tile_width(self, width, cols):
+        if cols < 1:
+            cols = 1
+        gap = 2
+        border = 2
+        available = width - (cols - 1) * gap - cols * border
+        return max(10, available // cols)
+
+
+# ── rendering ─────────────────────────────────────────────────────────
+
+def _hero(model):
+    st = model.val("name", "Default")
+    count = len(model.themes)
+    subtitle = f"{st} · {count} themes"
+    msg = ""
+    if model.err:
+        msg = model.err
+    elif model.message and not model.busy:
+        msg = model.message
+    elif model.applying:
+        msg = f"applying {model.applying}…"
+    return S.hero_line("Theme Settings", subtitle, "ok", model.busy, msg, "")
+
+
+def _help(model):
+    return (
+        [("Tab", "focus grid"), ("q", "quit"), ("r", "refresh")],
+        [("enter", "apply"), ("↑↓←→", "navigate")],
+    )
+
+
+def _render_theme_grid(model, width, max_rows):
+    if not model.themes:
+        return [("section", "Themes"), ("muted", "No themes available")]
+
+    cols = model.grid_columns(width)
+    tw = model.tile_width(width, cols)
+    total_rows = (len(model.themes) + cols - 1) // cols
+    selected_row = model.selected // cols
+    start_row = max(0, selected_row - max_rows + 1) if selected_row >= max_rows else 0
+    end_row = min(total_rows, start_row + max_rows)
+
+    lines = []
+    lines.append(("section", "Themes"))
+    lines.append(("muted", "Choose a theme. Enter applies the selected theme."))
+    lines.append(("text", ""))
+
+    if start_row > 0:
+        lines.append(("muted", f"… {start_row} rows above"))
+
+    for row in range(start_row, end_row):
+        for sub_row in range(5):
+            cells = []
+            for col in range(cols):
+                idx = row * cols + col
+                if idx >= len(model.themes):
+                    cells.append({"text": " " * (tw + 4), "pair": 0, "width": tw + 4, "bold": False})
+                    continue
+                theme = model.themes[idx]
+                is_selected = (idx == model.selected)
+
+                accent = theme.accent or "#444444"
+                bg     = theme.background or "#111111"
+                fg     = theme.foreground or "#eeeeee"
+                accent_rgb = _hex_to_rgb(accent) or (32, 214, 199)
+                border_pair = _get_tile_color_pair(accent_rgb, (0, 0, 0))
+
+                if sub_row == 0:
+                    if is_selected:
+                        left_b, right_b = "┌", "┐"
+                        content = "─" * tw
+                        b_pair = border_pair
+                    else:
+                        left_b, right_b = " ", " "
+                        content = " " * tw
+                        b_pair = 0
+                    pair, bold = 0, False
+                elif sub_row == 1:
+                    if is_selected:
+                        marker = "●"
+                        fg_rgb = _hex_to_rgb(fg) or (238, 238, 238)
+                        pair = _get_tile_color_pair(fg_rgb, accent_rgb)
+                        left_b, right_b = "│", "│"
+                        b_pair = border_pair
+                    else:
+                        marker = "●" if theme.current else " "
+                        pair = _get_theme_tile_pair(accent, bg, fg, "header")
+                        left_b, right_b = " ", " "
+                        b_pair = 0
+                    content = (marker + " " + " " * tw)[:tw]
+                    bold = is_selected
+                elif sub_row == 2:
+                    content = ("Ag" + " " * tw)[:tw]
+                    pair = _get_theme_tile_pair(accent, bg, fg, "sample")
+                    if is_selected:
+                        left_b, right_b = "│", "│"
+                        b_pair = border_pair
+                    else:
+                        left_b, right_b = " ", " "
+                        b_pair = 0
+                    bold = False
+                elif sub_row == 3:
+                    content = S.truncate(theme.name, tw).ljust(tw)
+                    if is_selected:
+                        pair = _get_theme_tile_pair(accent, bg, fg, "header")
+                        left_b, right_b = "│", "│"
+                        b_pair = border_pair
+                        bold = True
+                    elif theme.current:
+                        pair = 0
+                        left_b, right_b = " ", " "
+                        b_pair = 0
+                        bold = True
+                    else:
+                        pair = 0
+                        left_b, right_b = " ", " "
+                        b_pair = 0
+                        bold = False
+                else:
+                    if is_selected:
+                        left_b, right_b = "└", "┘"
+                        content = "─" * tw
+                        b_pair = border_pair
+                    else:
+                        left_b, right_b = " ", " "
+                        content = " " * tw
+                        b_pair = 0
+                    pair, bold = 0, False
+
+                cells.append({"text": left_b, "pair": b_pair, "width": 1, "bold": False})
+                cells.append({"text": content, "pair": pair, "width": tw, "bold": bold})
+                cells.append({"text": right_b, "pair": b_pair, "width": 1, "bold": False})
+                if col < cols - 1:
+                    cells.append({"text": "  ", "pair": 0, "width": 2, "bold": False})
+
+            lines.append(("tile_row", cells))
+
+    if end_row < total_rows:
+        lines.append(("muted", f"… {total_rows - end_row} rows below"))
+
+    return lines
+
+
+def _draw_theme_grid(stdscr, m, grid_top_y, grid_start_x, grid_w_available, max_rows, grid_lines):
+    for i, item in enumerate(grid_lines):
+        if i >= max_rows:
+            break
+        tag = item[0]
+        if tag == "tile_row":
+            cells = item[1]
+            cur_x = grid_start_x
+            for cell in cells:
+                attr = curses.color_pair(cell["pair"])
+                if cell["bold"]:
+                    attr |= curses.A_BOLD
+                S.safe_addstr(stdscr, grid_top_y + 1 + i, cur_x, cell["text"], attr)
+                cur_x += cell["width"]
+        else:
+            text = item[1]
+            S.safe_addstr(stdscr, grid_top_y + 1 + i, grid_start_x,
+                          S.truncate(text, grid_w_available), S.TAG_STYLE.get(tag, S.ATTR_TEXT))
+
+
+# ── main view ─────────────────────────────────────────────────────────
+
+def _view(stdscr, m):
+    h, w = stdscr.getmaxyx()
+    m.width, m.height = w, h
+    stdscr.erase()
+
+    if not S.require_terminal_size(stdscr, 68, 18):
+        return
+
+    S.draw_hero(stdscr, _hero(m))
+
+    pad_x, pad_y = 2, 2
+    hero_h = 2
+    margin = 1
+    content_w = w - pad_x
+    avail_h = h - pad_y - hero_h
+
+    # Theme grid fills the available space
+    grid_w = max(20, content_w - margin)
+    grid_h = avail_h
+    S.draw_thick_border(stdscr, hero_h, margin, grid_h, grid_w, "Themes")
+    _draw_theme_grid(stdscr, m, hero_h, margin + 2,
+                     grid_w - 4, grid_h - 4,
+                     _render_theme_grid(m, grid_w - 4, grid_h - 4))
+
+    S.draw_help_bar(stdscr, *_help(m))
+    S.finish_frame(stdscr)
+
+def _handle_key(stdscr, m, key):
+    if key == ord('q') or key == 27:
+        return False
+
+    if m.busy:
+        return True
+
+    if key == curses.KEY_MOUSE:
+        me = S.get_mouse_event()
+        if me:
+            wheel = S.mouse_wheel_delta(me)
+            if wheel is not None:
+                cols = m.grid_columns(m.width - 10) if m.themes else 1
+                m.move_selection(-cols if wheel > 0 else cols)
+                m.dirty = True
+        return True
+
+    cols = m.grid_columns(m.width - 10) if m.themes else 1
+
+    # Theme navigation
+    if key in (curses.KEY_UP, ord('k')):
+        m.move_selection(-cols)
+    elif key in (curses.KEY_DOWN, ord('j')):
+        m.move_selection(cols)
+    elif key in (curses.KEY_LEFT, ord('h')):
+        m.move_selection(-1)
+    elif key in (curses.KEY_RIGHT, ord('l')):
+        m.move_selection(1)
+    elif key == curses.KEY_PPAGE:
+        m.move_selection(-cols * 3)
+    elif key == curses.KEY_NPAGE:
+        m.move_selection(cols * 3)
+    elif key == curses.KEY_HOME:
+        m.selected = 0
+    elif key == curses.KEY_END:
+        m.selected = max(0, len(m.themes) - 1)
+    elif key == ord('\t'):
+        pass  # No panel switching needed
+    elif key in (ord('\n'), ord('a')):
+        if m.selected < len(m.themes):
+            m.apply_theme(m.themes[m.selected].slug)
+    elif key == ord('r'):
+        m.refresh()
+    else:
+        return True
+
+    m.dirty = True
+    return True
+
+
+def main(stdscr):
+    S.run_tui_loop(stdscr, Model(), _view, _handle_key, poll_timeout=200)
+
+
+if __name__ == "__main__":
+    curses.wrapper(main)

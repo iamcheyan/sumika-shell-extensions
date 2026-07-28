@@ -19,6 +19,6 @@ BarModuleButton {
 
     onClicked: {
         if (Date.now() - GlobalStates.barPopupDismissedAt < 200) return;
-        Quickshell.execDetached(["omd-launch-keyboard-tui"]);
+        Quickshell.execDetached(["sumika-launch-keyboard-tui"]);
     }
 }

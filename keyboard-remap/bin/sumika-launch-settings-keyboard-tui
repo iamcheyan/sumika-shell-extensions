@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SUMIKA_SHELL_ROOT="${SUMIKA_SHELL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+export SUMIKA_SHELL_ROOT
+
+exec "$SUMIKA_SHELL_ROOT/bin/sumika-launch-tui" "$SUMIKA_SHELL_ROOT/bin/sumika-settings-tui" keyboard

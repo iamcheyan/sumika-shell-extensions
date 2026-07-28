@@ -45,7 +45,7 @@ Singleton {
     // ── Status Process ──
     Process {
         id: statusProc
-        command: ["bash", "-c", "omd-settings-windows-vm status"]
+        command: ["bash", "-c", "sumika-settings-windows-vm status"]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {

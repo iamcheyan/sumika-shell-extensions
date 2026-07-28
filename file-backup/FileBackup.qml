@@ -24,7 +24,7 @@ Singleton {
     Process {
         id: statusProc
 
-        command: ["sh", "-c", `${root.shareDir}/omd-backup status`]
+        command: ["sh", "-c", `${root.shareDir}/sumika-backup status`]
 
         stdout: StdioCollector {
             onStreamFinished: {
@@ -56,7 +56,7 @@ Singleton {
 
     function openSettings() {
         // Open the settings page via Quickshell's settings navigation
-        Quickshell.execDetached([`${root.shareDir}/omd-launch-settings-backup-tui`]);
+        Quickshell.execDetached([`${root.shareDir}/sumika-launch-settings-backup-tui`]);
     }
 
     function refreshStatus() {

@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Check or install keyd for OMD keyboard remapping.
+# Check or install keyd for Sumika Shell keyboard remapping.
 set -eu
 
-KEYD_SRC="${HOME}/.cache/omd-keyd-src"
+KEYD_SRC="${HOME}/.cache/sumika-keyd-src"
 KEYD_REPO="https://github.com/rvaiya/keyd.git"
 
 start_keyd() {
@@ -19,8 +19,8 @@ start_keyd() {
 }
 
 install_polkit_rule() {
-    local src="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../share" && pwd)/polkit-1/rules.d/50-omd-keyboard.rules"
-    local dest="/etc/polkit-1/rules.d/50-omd-keyboard.rules"
+    local src="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/../share" && pwd)/polkit-1/rules.d/50-sumika-keyboard.rules"
+    local dest="/etc/polkit-1/rules.d/50-sumika-keyboard.rules"
     if [[ ! -f "$src" ]]; then
         return 0
     fi
@@ -93,7 +93,7 @@ fi
 
 if command -v keyd >/dev/null 2>&1 && systemctl is-active keyd >/dev/null 2>&1; then
     echo "keyd-ready"
-    if [[ ! -f /etc/polkit-1/rules.d/50-omd-keyboard.rules ]]; then
+    if [[ ! -f /etc/polkit-1/rules.d/50-sumika-keyboard.rules ]]; then
         echo "NOTE: polkit rule not installed — Apply will prompt for password. Re-run setup to install." >&2
     fi
     exit 0

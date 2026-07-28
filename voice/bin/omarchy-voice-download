@@ -6,7 +6,7 @@ set -eu
 # omarchy:args=<model-dir>
 # omarchy:description=Downloads the SenseVoice Small ONNX INT8 model and tokens from HuggingFace
 
-MODEL_DIR="${OMD_VOICE_MODEL:-$HOME/.cache/omd-voice/sense-voice-small-int8}"
+MODEL_DIR="${SUMIKA_VOICE_MODEL:-$HOME/.cache/sumika-voice/sense-voice-small-int8}"
 BASE_URL="https://huggingface.co/csukuangfj/sherpa-onnx-sense-voice-zh-en-ja-ko-yue-2024-07-17/resolve/main"
 
 mkdir -p "$MODEL_DIR"

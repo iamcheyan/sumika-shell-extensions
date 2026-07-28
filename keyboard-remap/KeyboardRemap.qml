@@ -31,7 +31,7 @@ Singleton {
     readonly property string dataDir: `${FileUtils.trimFileProtocol(Directories.config)}/sumika-shell/keyboard-remap`
     readonly property string profilesPath: `${root.dataDir}/profiles.json`
 
-    readonly property string functionRowHelper: `${root.shareDir}/omd-keyboard-function-row`
+    readonly property string functionRowHelper: `${root.shareDir}/sumika-keyboard-function-row`
 
     function applyFunctionRowStatus(text) {
         try {
@@ -485,7 +485,7 @@ Singleton {
 
     Process {
         id: listProc
-        command: ["bash", `${root.shareDir}/omd-keyboard-list`]
+        command: ["bash", `${root.shareDir}/sumika-keyboard-list`]
         stdout: StdioCollector {
             onStreamFinished: {
                 try {
@@ -546,7 +546,7 @@ Singleton {
 
     Process {
         id: pendingCheckProc
-        command: ["bash", "-c", `'${root.shareDir}/omd-keyboard-render' | cmp -s - /etc/keyd/omd.conf && echo applied || echo pending`]
+        command: ["bash", "-c", `'${root.shareDir}/sumika-keyboard-render' | cmp -s - /etc/keyd/sumika.conf && echo applied || echo pending`]
         stdout: SplitParser {
             onRead: line => {
                 root.hasPendingChanges = (line === "pending");
@@ -593,7 +593,7 @@ Singleton {
 
     Process {
         id: applyProc
-        command: ["bash", `${root.shareDir}/omd-keyboard-apply`]
+        command: ["bash", `${root.shareDir}/sumika-keyboard-apply`]
         stdout: SplitParser {
             onRead: line => {
                 if (line.startsWith("ERROR:"))
@@ -625,7 +625,7 @@ Singleton {
 
     Process {
         id: setupProc
-        command: ["bash", `${root.shareDir}/omd-keyboard-setup`]
+        command: ["bash", `${root.shareDir}/sumika-keyboard-setup`]
         stdout: SplitParser {
             onRead: line => {
                 if (line.startsWith("ERROR:"))

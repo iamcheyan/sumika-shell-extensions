@@ -5,8 +5,8 @@
   "version": "2.0.0",
   "kind": "application",
   "entry": {
-    "instance": "omd-clipboard-store",
-    "command": ["bin/omd-clipboard-store"],
+    "instance": "sumika-clipboard-store",
+    "command": ["bin/sumika-clipboard-store"],
     "autostart": true
   },
   "actionsProvider": "module-actions.qml",

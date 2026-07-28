@@ -6,7 +6,7 @@ Usage:
     omarchy-voice-transcribe <wav-path>
 
 First call starts a daemon that loads the SenseVoice model and listens on
-/tmp/omd-voice.sock. Subsequent calls connect to the running daemon for
+/tmp/sumika-voice.sock. Subsequent calls connect to the running daemon for
 fast low-latency transcription.
 
 Output: JSON line to stdout: {"text": "..."} or {"error": "..."}
@@ -23,18 +23,18 @@ import tempfile
 import time
 import wave
 
-SOCKET_PATH = "/tmp/omd-voice.sock"
-DAEMON_PID_PATH = "/tmp/omd-voice.pid"
-CACHE_DIR = os.path.expanduser("~/.cache/omd-voice")
+SOCKET_PATH = "/tmp/sumika-voice.sock"
+DAEMON_PID_PATH = "/tmp/sumika-voice.pid"
+CACHE_DIR = os.path.expanduser("~/.cache/sumika-voice")
 LOG_PATH = os.path.join(CACHE_DIR, "transcribe.log")
 MODEL_DIR = os.environ.get(
-    "OMD_VOICE_MODEL",
+    "SUMIKA_VOICE_MODEL",
     os.path.join(CACHE_DIR, "sense-voice-small-int8"),
 )
 MODEL = os.path.join(MODEL_DIR, "model.int8.onnx")
 TOKENS = os.path.join(MODEL_DIR, "tokens.txt")
-LANGUAGE = os.environ.get("OMD_VOICE_LANG", "auto")
-NUM_THREADS = int(os.environ.get("OMD_VOICE_THREADS", "4"))
+LANGUAGE = os.environ.get("SUMIKA_VOICE_LANG", "auto")
+NUM_THREADS = int(os.environ.get("SUMIKA_VOICE_THREADS", "4"))
 
 MIN_WAV_BYTES = 100
 MIN_WAV_DURATION_SEC = 0.3

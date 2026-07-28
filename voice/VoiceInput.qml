@@ -27,11 +27,11 @@ Singleton {
     property bool daemonRunning: false
     property bool transcriptionDelivered: false
 
-    readonly property string cacheDir: FileUtils.trimFileProtocol(`${Directories.genericCache}/omd-voice`)
+    readonly property string cacheDir: FileUtils.trimFileProtocol(`${Directories.genericCache}/sumika-voice`)
     readonly property string modelDir: `${root.cacheDir}/sense-voice-small-int8`
     readonly property string venvDir: `${root.cacheDir}/venv`
-    readonly property string wavPath: "/tmp/omd-voice-rec.wav"
-    readonly property string recPidFile: "/tmp/omd-voice-rec.pid"
+    readonly property string wavPath: "/tmp/sumika-voice-rec.wav"
+    readonly property string recPidFile: "/tmp/sumika-voice-rec.pid"
 
     readonly property string shareDir: {
         const dir = FileUtils.trimFileProtocol(Qt.resolvedUrl(".")) + "/bin"
@@ -39,7 +39,7 @@ Singleton {
     }
 
     // paste-at-cursor lives in the extension's own bin/ dir
-    readonly property string pasteScript: `${root.shareDir}/omd-paste-at-cursor`
+    readonly property string pasteScript: `${root.shareDir}/sumika-paste-at-cursor`
 
     // 录音开始时记录焦点窗口，转写完成后贴回该窗口（避免转写期间焦点跑到顶栏）。
     property string focusedWindowClass: ""
@@ -79,7 +79,7 @@ Singleton {
     onStateChanged: {
         if (state === "recording") {
             // Bind Escape to cancel via file flag (self-contained, no bar IPC needed)
-            Quickshell.execDetached(["hyprctl", "eval", "o.bind(\"escape\", \"Cancel voice recording\", \"touch /tmp/omd-voice-cancel\")"])
+            Quickshell.execDetached(["hyprctl", "eval", "o.bind(\"escape\", \"Cancel voice recording\", \"touch /tmp/sumika-voice-cancel\")"])
         } else {
             Quickshell.execDetached(["hyprctl", "eval", "hl.unbind(\"escape\")"])
         }
@@ -131,10 +131,10 @@ Singleton {
     Process {
         id: cancelFileCheckProc
         running: false
-        command: ["test", "-f", "/tmp/omd-voice-cancel"]
+        command: ["test", "-f", "/tmp/sumika-voice-cancel"]
         onExited: (code, status) => {
             if (code === 0) {
-                Quickshell.execDetached(["rm", "-f", "/tmp/omd-voice-cancel"])
+                Quickshell.execDetached(["rm", "-f", "/tmp/sumika-voice-cancel"])
                 root.cancel()
             }
         }
@@ -163,7 +163,7 @@ Singleton {
     Process {
         id: daemonCheckProc
         command: ["bash", "-c",
-            `if [ -S /tmp/omd-voice.sock ] && ss -xl src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo stopped; fi`]
+            `if [ -S /tmp/sumika-voice.sock ] && ss -xl src /tmp/sumika-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo stopped; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 root.daemonRunning = (line === "running")
@@ -173,7 +173,7 @@ Singleton {
 
     // ── 桌面通知 helper ──
     function notify(title, body, icon) {
-        var args = ["notify-send", "-a", "OMD Voice", "-t", "3000"]
+        var args = ["notify-send", "-a", "Sumika Shell Voice", "-t", "3000"]
         if (icon) args.push("-i", icon)
         args.push(title, body)
         Quickshell.execDetached(args)
@@ -225,7 +225,7 @@ Singleton {
 
     Process {
         id: setupProc
-        command: ["bash", `${root.shareDir}/omd-voice-setup`]
+        command: ["bash", `${root.shareDir}/sumika-voice-setup`]
         stdout: SplitParser {
             onRead: (line) => {
                 if (line.startsWith("ERROR")) {
@@ -251,7 +251,7 @@ Singleton {
 
     Process {
         id: downloadProc
-        command: ["bash", `${root.shareDir}/omd-voice-download`]
+        command: ["bash", `${root.shareDir}/sumika-voice-download`]
         stdout: SplitParser {
             onRead: (line) => {
                 if (line === "model-ready") {
@@ -316,12 +316,12 @@ Singleton {
 
     Process {
         id: recProc
-        command: ["bash", `${root.shareDir}/omd-voice-record`, "start"]
+        command: ["bash", `${root.shareDir}/sumika-voice-record`, "start"]
     }
 
     Process {
         id: stopRecProc
-        command: ["bash", `${root.shareDir}/omd-voice-record`, "stop"]
+        command: ["bash", `${root.shareDir}/sumika-voice-record`, "stop"]
         onExited: (code, status) => {
             if (root.state === "recording") {
                 state = "transcribing"
@@ -335,7 +335,7 @@ Singleton {
     Process {
         id: transcribeProc
         command: ["bash", "-c",
-            `"${root.shareDir}/omd-voice-transcribe" "${root.wavPath}"`]
+            `"${root.shareDir}/sumika-voice-transcribe" "${root.wavPath}"`]
         stdout: SplitParser {
             onRead: (line) => {
                 try {
@@ -388,7 +388,7 @@ Singleton {
         Quickshell.execDetached(["bash", "-c",
             `payload=$(mktemp); trap 'rm -f "$payload"' EXIT; ` +
             `printf '%s' '${StringUtils.shellSingleQuoteEscape(text)}' > "$payload" && ` +
-            `wl-copy < "$payload" && OMD_PASTE_SOURCE=voice ` +
+            `wl-copy < "$payload" && SUMIKA_PASTE_SOURCE=voice ` +
             `'${root.pasteScript}' --file "$payload" auto '${StringUtils.shellSingleQuoteEscape(root.focusedWindowClass)}' '${StringUtils.shellSingleQuoteEscape(target)}'`])
     }
 

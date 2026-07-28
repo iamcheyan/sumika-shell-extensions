@@ -62,7 +62,7 @@ ManagedPopupWindow {
     Process {
         id: checkModelProc
         command: ["bash", "-c",
-            `if [ -f '${FileUtils.trimFileProtocol(Directories.genericCache)}/omd-voice/sense-voice-small-int8/model.int8.onnx' ]; then size=$(du -sm '${FileUtils.trimFileProtocol(Directories.genericCache)}/omd-voice/sense-voice-small-int8' 2>/dev/null | awk '{print $1}'); echo "ok:$size"; else echo "missing"; fi`]
+            `if [ -f '${FileUtils.trimFileProtocol(Directories.genericCache)}/sumika-voice/sense-voice-small-int8/model.int8.onnx' ]; then size=$(du -sm '${FileUtils.trimFileProtocol(Directories.genericCache)}/sumika-voice/sense-voice-small-int8' 2>/dev/null | awk '{print $1}'); echo "ok:$size"; else echo "missing"; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 if (line.startsWith("ok:")) {
@@ -83,7 +83,7 @@ ManagedPopupWindow {
     Process {
         id: venvCheckProc
         command: ["bash", "-c",
-            `if [ -f '${FileUtils.trimFileProtocol(Directories.genericCache)}/omd-voice/venv/bin/python3' ]; then echo ok; else echo missing; fi`]
+            `if [ -f '${FileUtils.trimFileProtocol(Directories.genericCache)}/sumika-voice/venv/bin/python3' ]; then echo ok; else echo missing; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 root.venvStatus = line === "ok" ? "ok" : "missing"
@@ -98,7 +98,7 @@ ManagedPopupWindow {
     Process {
         id: daemonCheckProc
         command: ["bash", "-c",
-            `if [ -S /tmp/omd-voice.sock ] && ss -xl src /tmp/omd-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo idle; fi`]
+            `if [ -S /tmp/sumika-voice.sock ] && ss -xl src /tmp/sumika-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo idle; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 root.daemonStatus = line === "running" ? "ok" : "idle"
@@ -240,7 +240,7 @@ ManagedPopupWindow {
                 root.modelStatus = "checking";
                 root.venvStatus = "checking";
                 root.daemonStatus = "checking";
-                Quickshell.execDetached(["bash", "-c", `"${root.shareDir}/omd-voice-setup" && "${root.shareDir}/omd-voice-download"`]);
+                Quickshell.execDetached(["bash", "-c", `"${root.shareDir}/sumika-voice-setup" && "${root.shareDir}/sumika-voice-download"`]);
                 refreshTimer.restart();
             }
         }
@@ -299,7 +299,7 @@ ManagedPopupWindow {
             onClicked: {
                 root.close();
                 Quickshell.execDetached(["bash", "-c",
-                    `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/omd-edit-voice-bindings"`]);
+                    `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/sumika-edit-voice-bindings"`]);
             }
         }
     }

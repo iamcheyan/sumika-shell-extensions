@@ -1,8 +1,8 @@
 local theme_path = vim.fn.expand("~/.local/state/sumika-shell/theme/current/neovim.lua")
-local omd_nvim_path = vim.fn.expand("~/.config/omd/config/nvim")
+local sumika_nvim_path = vim.fn.expand("~/.config/sumika-shell/config/nvim")
 
-if vim.fn.isdirectory(omd_nvim_path) == 1 then
-  vim.opt.runtimepath:prepend(omd_nvim_path)
+if vim.fn.isdirectory(sumika_nvim_path) == 1 then
+  vim.opt.runtimepath:prepend(sumika_nvim_path)
 end
 
 local function load_theme_specs()
@@ -12,7 +12,7 @@ local function load_theme_specs()
   end
 
   vim.schedule(function()
-    vim.notify("Could not load OMD Neovim theme: " .. theme_path, vim.log.levels.WARN)
+    vim.notify("Could not load Sumika Shell Neovim theme: " .. theme_path, vim.log.levels.WARN)
   end)
   return {}
 end
@@ -35,7 +35,7 @@ local function apply_current_theme()
   local colorscheme = find_colorscheme(specs)
 
   if not colorscheme then
-    vim.notify("OMD Neovim theme has no LazyVim colorscheme", vim.log.levels.WARN)
+    vim.notify("Sumika Shell Neovim theme has no LazyVim colorscheme", vim.log.levels.WARN)
     return
   end
 
@@ -48,7 +48,7 @@ local function apply_current_theme()
     last_theme = colorscheme
   else
     vim.notify(
-      "OMD colorscheme '" .. colorscheme .. "' is not available yet. Run :Lazy sync or restart Neovim. " .. err,
+      "Sumika Shell colorscheme '" .. colorscheme .. "' is not available yet. Run :Lazy sync or restart Neovim. " .. err,
       vim.log.levels.WARN
     )
   end
@@ -57,7 +57,7 @@ end
 vim.api.nvim_create_user_command("OmarchyThemeReload", apply_current_theme, {})
 
 vim.api.nvim_create_autocmd({ "FocusGained", "VimEnter" }, {
-  group = vim.api.nvim_create_augroup("omd-theme", { clear = true }),
+  group = vim.api.nvim_create_augroup("sumika-theme", { clear = true }),
   callback = function()
     apply_current_theme()
   end,

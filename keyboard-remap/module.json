@@ -12,10 +12,10 @@
         "id": "sumika-keyboard-remap",
         "name": "Sumika Keyboard Remap",
         "comment": "Configure keyboard remapping (keyd) — remap keys, manage profiles, and set function row behavior",
-        "exec": "omd-launch-keyboard-tui",
+        "exec": "sumika-launch-keyboard-tui",
         "icon": "icon.png",
         "categories": ["Settings", "HardwareSettings"],
-        "startupWmClass": "org.omd.keyboardtui"
+        "startupWmClass": "io.github.iamcheyan.sumika.keyboardtui"
       }
     ],
     "popupSections": [

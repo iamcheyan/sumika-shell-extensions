@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WAV_PATH="${OMD_VOICE_WAV:-/tmp/omd-voice-rec.wav}"
-PID_PATH="${OMD_VOICE_REC_PID:-/tmp/omd-voice-rec.pid}"
+WAV_PATH="${SUMIKA_VOICE_WAV:-/tmp/sumika-voice-rec.wav}"
+PID_PATH="${SUMIKA_VOICE_REC_PID:-/tmp/sumika-voice-rec.pid}"
 
 recording_pids() {
   pgrep -f "[p]arecord .*${WAV_PATH}" 2>/dev/null || true
@@ -47,7 +47,7 @@ stop_recording() {
 }
 
 wake_default_source() {
-  local source="${OMD_VOICE_SOURCE:-$(pactl get-default-source 2>/dev/null || true)}"
+  local source="${SUMIKA_VOICE_SOURCE:-$(pactl get-default-source 2>/dev/null || true)}"
   if [[ -z "$source" ]]; then
     return 0
   fi
@@ -67,8 +67,8 @@ case "${1:-}" in
       --file-format=wav
       --latency-msec=10
     )
-    if [[ -n "${OMD_VOICE_SOURCE:-}" ]]; then
-      parecord_args+=(--device="$OMD_VOICE_SOURCE")
+    if [[ -n "${SUMIKA_VOICE_SOURCE:-}" ]]; then
+      parecord_args+=(--device="$SUMIKA_VOICE_SOURCE")
     fi
     parecord "${parecord_args[@]}" "$WAV_PATH" >/dev/null 2>&1 &
     pid="$!"

@@ -13,10 +13,10 @@
         "id": "sumika-windows-vm",
         "name": "Sumika Windows VM",
         "comment": "Manage Windows VM — install, run, connect via RDP or web console",
-        "exec": "omd-launch-settings-windows-tui",
+        "exec": "sumika-launch-settings-windows-tui",
         "icon": "icon.png",
         "categories": ["System", "Emulator"],
-        "startupWmClass": "org.omd.windowsvmtui"
+        "startupWmClass": "io.github.iamcheyan.sumika.windowsvmtui"
       }
     ],
     "services": [],

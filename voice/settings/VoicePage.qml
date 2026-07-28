@@ -130,7 +130,7 @@ ColumnLayout {
             `path = Path(${pathLiteral})\n` +
             `bindings = json.loads(${listLiteral})\n` +
             "path.parent.mkdir(parents=True, exist_ok=True)\n" +
-            "header = \"# OMD Voice Input Keybindings\\n# One key combination per line. Format e.g., 'ALT + A' or 'code:472'\\n\\n\"\n" +
+            "header = \"# Sumika Shell Voice Input Keybindings\\n# One key combination per line. Format e.g., 'ALT + A' or 'code:472'\\n\\n\"\n" +
             "body = \"\\n\".join(bindings)\n" +
             "path.write_text(header + body + (\"\\n\" if bindings else \"\"))\n" +
             "subprocess.run([\"hyprctl\", \"reload\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
@@ -588,7 +588,7 @@ ColumnLayout {
                             label: "Edit in TUI"
                             iconName: "open_in_new"
                             onClicked: pageRoot.openExternal([
-                                "omd-launch-tui",
+                                "sumika-launch-tui",
                                 `${pageRoot.omdRoot}/scripts/voice-bind-tui`
                             ])
                         }
@@ -629,7 +629,7 @@ ColumnLayout {
                             label: "Full diagnose"
                             iconName: "open_in_new"
                             onClicked: pageRoot.openExternal([
-                                "omd-launch-tui",
+                                "sumika-launch-tui",
                                 `${pageRoot.omdRoot}/scripts/voice-diagnose`
                             ])
                         }
@@ -657,7 +657,7 @@ ColumnLayout {
                     }
                     SettingsRow {
                         label: "Socket"
-                        description: "/tmp/omd-voice.sock"
+                        description: "/tmp/sumika-voice.sock"
                         clickable: false
                     }
                     SettingsRow {
@@ -671,7 +671,7 @@ ColumnLayout {
                             label: "TUI test"
                             iconName: "open_in_new"
                             onClicked: pageRoot.openExternal([
-                                "omd-launch-tui",
+                                "sumika-launch-tui",
                                 `${pageRoot.omdRoot}/scripts/voice-test-tui`
                             ])
                         }
@@ -679,7 +679,7 @@ ColumnLayout {
                             label: "Diagnose"
                             iconName: "open_in_new"
                             onClicked: pageRoot.openExternal([
-                                "omd-launch-tui",
+                                "sumika-launch-tui",
                                 `${pageRoot.omdRoot}/scripts/voice-diagnose`
                             ])
                         }

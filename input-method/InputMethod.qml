@@ -11,7 +11,7 @@ import qs.modules.common.functions
 Singleton {
     id: root
 
-    readonly property string helper: FileUtils.trimFileProtocol(Qt.resolvedUrl(".")) + "/bin/omd-input-method"
+    readonly property string helper: FileUtils.trimFileProtocol(Qt.resolvedUrl(".")) + "/bin/sumika-input-method"
 
     property bool available: false
     property bool busy: false

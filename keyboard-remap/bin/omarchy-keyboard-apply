@@ -1,24 +1,24 @@
 #!/usr/bin/env bash
-# Generate keyd config from OMD profiles and install with an available
+# Generate keyd config from Sumika Shell profiles and install with an available
 # privilege helper.
 set -eu
 
-# Resolve the true OMD_ROOT directory even if executed under sudo
+# Resolve the true SUMIKA_SHELL_ROOT directory even if executed under sudo
 REAL_HOME="${HOME}"
 if [[ "${USER:-}" == "root" && -n "${SUDO_USER:-}" ]]; then
     REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
 fi
 
-OMD_ROOT="${OMD_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)}"
+SUMIKA_SHELL_ROOT="${SUMIKA_SHELL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)}"
 # Sumika Shell paths (user config + generated state)
 SUMIKA_CONFIG="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$REAL_HOME/.config}/sumika-shell}"
 SUMIKA_STATE="${SUMIKA_SHELL_STATE_HOME:-${XDG_STATE_HOME:-$REAL_HOME/.local/state}/sumika-shell}"
 # profiles.json: user-authored config (new path with legacy fallback for reads)
 PROFILES="${SUMIKA_CONFIG}/keyboard-remap/profiles.json"
-PROFILES_LEGACY="${OMD_ROOT}/keyboard-remap/profiles.json"
+PROFILES_LEGACY="${SUMIKA_SHELL_ROOT}/keyboard-remap/profiles.json"
 # keyd.generated.conf: generated state (always write to new path)
 GENERATED="${SUMIKA_STATE}/keyboard-remap/keyd.generated.conf"
-KEYD_DEST="/etc/keyd/omd.conf"
+KEYD_DEST="/etc/keyd/sumika.conf"
 RENDER="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")" && pwd)/omarchy-keyboard-render"
 
 mkdir -p "$(dirname "$PROFILES")" "$(dirname "$GENERATED")"
@@ -45,7 +45,7 @@ if grep -q '^## WARN' "$GENERATED"; then
 fi
 
 if ! command -v keyd >/dev/null 2>&1; then
-    echo "ERROR: keyd is not installed. Run omd-keyboard-setup first." >&2
+    echo "ERROR: keyd is not installed. Run sumika-keyboard-setup first." >&2
     exit 2
 fi
 

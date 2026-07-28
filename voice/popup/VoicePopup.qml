@@ -181,8 +181,8 @@ PopupColumn {
                         Quickshell.execDetached(["bash", "-c",
                             `payload=$(mktemp); trap 'rm -f "$payload"' EXIT; ` +
                             `printf '%s' '${StringUtils.shellSingleQuoteEscape(vi.lastTranscription)}' > "$payload" && ` +
-                            `wl-copy < "$payload" && OMD_PASTE_SOURCE=voice-manual ` +
-                            `'${vi.shareDir}/omd-paste-at-cursor' --file "$payload" auto`]);
+                            `wl-copy < "$payload" && SUMIKA_PASTE_SOURCE=voice-manual ` +
+                            `'${vi.shareDir}/sumika-paste-at-cursor' --file "$payload" auto`]);
                     }
                 }
             }
@@ -297,7 +297,7 @@ PopupColumn {
         label: "Voice Settings…"
         onClicked: {
             GlobalStates.barPopupType = "";
-            Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/omd-settings`, "open", "voice"]);
+            Quickshell.execDetached([`${FileUtils.trimFileProtocol(Directories.config)}/omd/bin/sumika-settings`, "open", "voice"]);
         }
     }
 }

@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+export SCRIPT_DIR
+
+# Use sumika-launch-tui from PATH, or fall back to xdg-terminal-exec
+if command -v sumika-launch-tui >/dev/null 2>&1; then
+    exec sumika-launch-tui "$SCRIPT_DIR/sumika-settings-voice-tui" voice
+else
+    case "${TERM:-}" in
+        foot) exec foot --app-id=io.github.iamcheyan.sumika.voicesettings "$SCRIPT_DIR/sumika-settings-voice-tui" voice ;;
+        kitty) exec kitty --class=io.github.iamcheyan.sumika.voicesettings "$SCRIPT_DIR/sumika-settings-voice-tui" voice ;;
+        *) exec xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.voicesettings "$SCRIPT_DIR/sumika-settings-voice-tui" voice ;;
+    esac
+fi
