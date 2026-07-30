@@ -336,7 +336,7 @@ Singleton {
                 root.refreshTranslationConfig()
                 root.notify(
                     "语音翻译尚未配置",
-                    "请在 Voice Input 设置中配置 API Endpoint、模型、目标语言和 API Key",
+                    "请在 Voice Model Manager 中选择可用的 OpenCode 模型和目标语言",
                     "dialog-warning"
                 )
                 return

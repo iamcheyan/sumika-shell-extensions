@@ -313,6 +313,7 @@ def translate(text: str) -> str:
         headers={
             "Authorization": f"Bearer {api_key}",
             "Content-Type": "application/json",
+            "User-Agent": "ai-sdk/openai-compatible",
         },
         method="POST",
     )
