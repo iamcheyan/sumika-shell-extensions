@@ -32,10 +32,20 @@ Singleton {
     property string translationEndpoint: ""
     property string translationModel: ""
     property string translationTargetLanguage: "English"
+    property bool speculativeTranslationEnabled: true
     property string translationConfigPath: ""
     property string translationSource: ""
     property string translationOutput: ""
     property string translationError: ""
+    property string speculativeSource: ""
+    property string speculativeOutput: ""
+    property var speculativeMetrics: ({})
+    property bool awaitingSpeculation: false
+    property double recordingStartedAt: 0
+    property double recordingStoppedAt: 0
+    property double transcriptionStartedAt: 0
+    property double translationStartedAt: 0
+    property var lastTranslationMetrics: ({})
 
     readonly property string cacheDir: FileUtils.trimFileProtocol(`${Directories.genericCache}/sumika-voice`)
     readonly property string modelDir: `${root.cacheDir}/sense-voice-small-int8`
@@ -51,6 +61,7 @@ Singleton {
     // paste-at-cursor lives in the extension's own bin/ dir
     readonly property string pasteScript: `${root.shareDir}/sumika-paste-at-cursor`
     readonly property string translationHelper: `${root.shareDir}/sumika-voice-translate`
+    readonly property string speculationHelper: `${root.shareDir}/sumika-voice-speculate`
 
     // 录音开始时记录焦点窗口，转写完成后贴回该窗口（避免转写期间焦点跑到顶栏）。
     property string focusedWindowClass: ""
@@ -200,6 +211,7 @@ Singleton {
                     root.translationEndpoint = result.endpoint || ""
                     root.translationModel = result.model || ""
                     root.translationTargetLanguage = result.targetLanguage || "English"
+                    root.speculativeTranslationEnabled = result.speculativeEnabled !== false
                     root.translationConfigPath = result.configPath || ""
                 } catch (error) {
                     root.translationReady = false
@@ -354,11 +366,20 @@ Singleton {
         root.recordingDuration = 0
         root.lastTranscription = ""
         root.lastError = ""
+        root.speculativeSource = ""
+        root.speculativeOutput = ""
+        root.speculativeMetrics = ({})
+        root.awaitingSpeculation = false
+        root.lastTranslationMetrics = ({})
+        root.recordingStartedAt = Date.now()
+        root.recordingStoppedAt = 0
         // 记录当前焦点窗口 class，转写完成时按此选 paste 命令
         focusClassProc.running = false
         focusClassProc.running = true
         state = "recording"
         recProc.running = true
+        if (root.activeMode === "translation" && root.speculativeTranslationEnabled)
+            speculationProc.running = true
     }
 
     function stopRecording() {
@@ -368,6 +389,7 @@ Singleton {
 
     function cancel() {
         if (state !== "recording") return
+        speculationProc.running = false
         state = "idle"
         stopRecProc.running = true
     }
@@ -389,6 +411,8 @@ Singleton {
         onExited: (code, status) => {
             if (root.state === "recording") {
                 state = "transcribing"
+                root.recordingStoppedAt = Date.now()
+                root.transcriptionStartedAt = Date.now()
                 transcribeProc.running = true
             }
         }
@@ -415,7 +439,7 @@ Singleton {
                             if (root.testMode) {
                                 root.onTestTranscriptionResult(result.text)
                             } else if (root.activeMode === "translation") {
-                                root.startTranslation(result.text)
+                                root.handleFinalTranslationSource(result.text)
                             } else {
                                 root.onTranscriptionResult(result.text)
                             }
@@ -462,13 +486,127 @@ Singleton {
             `'${root.pasteScript}' --file "$payload" auto '${StringUtils.shellSingleQuoteEscape(root.focusedWindowClass)}' '${StringUtils.shellSingleQuoteEscape(target)}'`])
     }
 
-    function startTranslation(text) {
+    Process {
+        id: speculationProc
+        command: [
+            root.speculationHelper,
+            root.wavPath,
+            "--pid-path", root.recPidFile,
+            "--transcribe-helper", `${root.shareDir}/sumika-voice-transcribe`,
+            "--translate-helper", root.translationHelper
+        ]
+
+        stdout: SplitParser {
+            onRead: (line) => {
+                try {
+                    const result = JSON.parse(line)
+                    if (result.event === "source") {
+                        root.speculativeSource = result.source || ""
+                        root.speculativeOutput = ""
+                        root.speculativeMetrics = {
+                            audioMs: result.audioMs || 0,
+                            transcribeMs: result.transcribeMs || 0,
+                            translationStartedAtMs: result.translationStartedAtMs || Date.now()
+                        }
+                    } else if (result.event === "invalidated") {
+                        if (root.speculativeSource === (result.source || "")) {
+                            root.speculativeSource = ""
+                            root.speculativeOutput = ""
+                            root.speculativeMetrics = ({})
+                        }
+                    } else if (result.event === "result") {
+                        root.speculativeSource = result.source || ""
+                        root.speculativeOutput = result.text || ""
+                        root.speculativeMetrics = {
+                            audioMs: result.audioMs || 0,
+                            transcribeMs: result.transcribeMs || 0,
+                            translateMs: result.translateMs || 0,
+                            apiSeconds: result.apiSeconds || 0,
+                            translationStartedAtMs: result.translationStartedAtMs
+                                || root.speculativeMetrics.translationStartedAtMs
+                                || 0,
+                            finalTranscribeMs: root.speculativeMetrics.finalTranscribeMs || 0
+                        }
+                        if (root.awaitingSpeculation
+                                && root.translationSource === root.speculativeSource
+                                && root.speculativeOutput.length > 0) {
+                            root.acceptTranslation(root.speculativeOutput, true)
+                        }
+                    }
+                } catch (error) {
+                    console.warn("[VoiceInput] speculative result parse error:", error)
+                }
+            }
+        }
+
+        onExited: (exitCode, exitStatus) => {
+            if (root.awaitingSpeculation && !translationProc.running)
+                root.awaitingSpeculation = false
+        }
+    }
+
+    function handleFinalTranslationSource(text) {
+        root.translationSource = text
+        const transcriptionMs = Math.max(0, Date.now() - root.transcriptionStartedAt)
+        if (root.speculativeSource === text && root.speculativeOutput.length > 0) {
+            root.speculativeMetrics.finalTranscribeMs = transcriptionMs
+            root.acceptTranslation(root.speculativeOutput, true)
+            return
+        }
+        if (root.speculativeSource === text && speculationProc.running) {
+            root.speculativeMetrics.finalTranscribeMs = transcriptionMs
+            root.startTranslation(text, true)
+            return
+        }
+        speculationProc.running = false
+        root.startTranslation(text)
+    }
+
+    function startTranslation(text, raceSpeculation) {
+        root.awaitingSpeculation = raceSpeculation === true
         root.translationSource = text
         root.translationOutput = ""
         root.translationError = ""
+        root.translationStartedAt = Date.now()
         root.state = "translating"
         translationProc.stdinEnabled = true
         translationProc.running = true
+    }
+
+    function acceptTranslation(text, speculative) {
+        root.awaitingSpeculation = false
+        if (!speculative)
+            speculationProc.running = false
+        root.translationOutput = text
+        root.lastTranscription = text
+        root.addToHistory(text)
+        root.deliverText(text, speculative ? "voice-translation-speculative" : "voice-translation")
+        const completedAt = Date.now()
+        root.lastTranslationMetrics = {
+            mode: speculative ? "speculative" : "normal",
+            recordingToPasteMs: Math.max(0, completedAt - root.recordingStartedAt),
+            releaseToPasteMs: Math.max(0, completedAt - root.recordingStoppedAt),
+            finalTranscribeMs: speculative
+                ? (root.speculativeMetrics.finalTranscribeMs || 0)
+                : Math.max(0, root.translationStartedAt - root.transcriptionStartedAt),
+            translationMs: speculative
+                ? (root.speculativeMetrics.translateMs || 0)
+                : Math.max(0, completedAt - root.translationStartedAt),
+            speculativeAudioMs: speculative
+                ? (root.speculativeMetrics.audioMs || 0)
+                : 0,
+            speculativeTranscribeMs: speculative
+                ? (root.speculativeMetrics.transcribeMs || 0)
+                : 0,
+            speculativeLeadMs: speculative
+                ? Math.max(0, root.recordingStoppedAt
+                    - (root.speculativeMetrics.translationStartedAtMs || root.recordingStoppedAt))
+                : 0
+        }
+        console.log("[VoiceInput] translation metrics:",
+            JSON.stringify(root.lastTranslationMetrics))
+        root.state = "success"
+        root.activeMode = "dictation"
     }
 
     Process {
@@ -511,10 +649,7 @@ Singleton {
             if (root.state !== "translating")
                 return
             if (exitCode === 0 && root.translationOutput.length > 0) {
-                root.lastTranscription = root.translationOutput
-                root.addToHistory(root.translationOutput)
-                root.deliverText(root.translationOutput, "voice-translation")
-                root.state = "success"
+                root.acceptTranslation(root.translationOutput, false)
             } else {
                 root.lastTranscription = root.translationSource
                 root.lastError = root.translationError
@@ -526,8 +661,8 @@ Singleton {
                     "dialog-error"
                 )
                 root.state = "error"
+                root.activeMode = "dictation"
             }
-            root.activeMode = "dictation"
         }
     }
 

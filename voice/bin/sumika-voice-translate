@@ -15,6 +15,7 @@ import socket
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import urllib.parse
 
@@ -25,10 +26,18 @@ DEFAULTS = {
 }
 DEFAULT_BINDINGS = ["ALT + A", "code:472"]
 DEFAULT_TRANSLATION_BINDING = "HANGUL"
-DAEMON_PROTOCOL_VERSION = 1
+DEFAULT_SPECULATIVE_ENABLED = True
+DAEMON_PROTOCOL_VERSION = 2
 DAEMON_BUILD = Path(__file__).stat().st_mtime_ns
 _cached_context: tuple[tuple[tuple[int, int], ...], dict[str, str]] | None = None
-_http_connections: dict[tuple[str, str, int], http.client.HTTPConnection] = {}
+_http_connections: dict[
+    tuple[str, str, int, str],
+    http.client.HTTPConnection,
+] = {}
+_lane_locks = {
+    "primary": threading.Lock(),
+    "speculative": threading.Lock(),
+}
 
 
 def xdg_path(variable: str, fallback: Path) -> Path:
@@ -106,6 +115,15 @@ def load_voice_config() -> dict[str, str]:
     }
 
 
+def load_speculative_enabled() -> bool:
+    loaded = read_json(voice_config_path())
+    translation = loaded.get("translation", {})
+    if not isinstance(translation, dict):
+        return DEFAULT_SPECULATIVE_ENABLED
+    value = translation.get("speculativeEnabled", DEFAULT_SPECULATIVE_ENABLED)
+    return value if isinstance(value, bool) else DEFAULT_SPECULATIVE_ENABLED
+
+
 def load_bindings() -> tuple[list[str], str]:
     loaded = read_json(voice_config_path())
     voice_input = loaded.get("voiceInput", {})
@@ -137,11 +155,21 @@ def save_voice_config(config: dict[str, str]) -> None:
         if isinstance(previous, dict)
         else DEFAULT_TRANSLATION_BINDING
     )
+    speculative_enabled = (
+        previous.get("speculativeEnabled", DEFAULT_SPECULATIVE_ENABLED)
+        if isinstance(previous, dict)
+        else DEFAULT_SPECULATIVE_ENABLED
+    )
     loaded["translation"] = {
         key: str(config.get(key, default)).strip()
         for key, default in DEFAULTS.items()
     }
     loaded["translation"]["binding"] = binding or DEFAULT_TRANSLATION_BINDING
+    loaded["translation"]["speculativeEnabled"] = (
+        speculative_enabled
+        if isinstance(speculative_enabled, bool)
+        else DEFAULT_SPECULATIVE_ENABLED
+    )
     write_voice_config(loaded)
 
 
@@ -262,6 +290,7 @@ def status() -> None:
                 "model": selection,
                 "modelName": str(selected["model"]) if selected else "",
                 "targetLanguage": config["targetLanguage"],
+                "speculativeEnabled": load_speculative_enabled(),
                 "bindings": bindings,
                 "translationBinding": translation_binding,
                 "endpoint": endpoint,
@@ -342,12 +371,15 @@ def translation_context() -> dict[str, str]:
     return context
 
 
-def connection_for(endpoint: str) -> tuple[http.client.HTTPConnection, str]:
+def connection_for(
+    endpoint: str,
+    lane: str = "primary",
+) -> tuple[http.client.HTTPConnection, str]:
     parsed = urllib.parse.urlsplit(endpoint)
     if parsed.scheme not in ("http", "https") or not parsed.hostname:
         raise RuntimeError("The selected OpenCode provider has an invalid baseURL")
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    key = (parsed.scheme, parsed.hostname, port)
+    key = (parsed.scheme, parsed.hostname, port, lane)
     connection = _http_connections.get(key)
     if connection is None:
         connection_type = (
@@ -363,17 +395,20 @@ def connection_for(endpoint: str) -> tuple[http.client.HTTPConnection, str]:
     return connection, path
 
 
-def drop_connection(endpoint: str) -> None:
+def drop_connection(endpoint: str, lane: str = "primary") -> None:
     parsed = urllib.parse.urlsplit(endpoint)
     if not parsed.hostname:
         return
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
-    connection = _http_connections.pop((parsed.scheme, parsed.hostname, port), None)
+    connection = _http_connections.pop(
+        (parsed.scheme, parsed.hostname, port, lane),
+        None,
+    )
     if connection is not None:
         connection.close()
 
 
-def api_request(context: dict[str, str], payload: dict) -> dict:
+def api_request(context: dict[str, str], payload: dict, lane: str = "primary") -> dict:
     encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {context['apiKey']}",
@@ -382,20 +417,20 @@ def api_request(context: dict[str, str], payload: dict) -> dict:
         "User-Agent": "ai-sdk/openai-compatible",
     }
     for attempt in range(2):
-        connection, path = connection_for(context["endpoint"])
+        connection, path = connection_for(context["endpoint"], lane)
         try:
             connection.request("POST", path, body=encoded, headers=headers)
             response = connection.getresponse()
             raw = response.read()
             if response.getheader("Connection", "").lower() == "close":
-                drop_connection(context["endpoint"])
+                drop_connection(context["endpoint"], lane)
         except (
             BrokenPipeError,
             ConnectionError,
             http.client.HTTPException,
             OSError,
         ) as error:
-            drop_connection(context["endpoint"])
+            drop_connection(context["endpoint"], lane)
             if attempt == 0:
                 continue
             raise RuntimeError(f"Unable to reach translation API: {error}") from error
@@ -420,7 +455,10 @@ def api_request(context: dict[str, str], payload: dict) -> dict:
     raise RuntimeError("Unable to reach translation API")
 
 
-def translate_with_details_direct(text: str) -> tuple[str, dict, dict[str, str]]:
+def translate_with_details_direct(
+    text: str,
+    lane: str = "primary",
+) -> tuple[str, dict, dict[str, str]]:
     source = text.strip()
     if not source:
         raise RuntimeError("Local transcription is empty")
@@ -445,7 +483,7 @@ def translate_with_details_direct(text: str) -> tuple[str, dict, dict[str, str]]
         "temperature": 0,
         "max_tokens": 2048,
     }
-    result = api_request(context, payload)
+    result = api_request(context, payload, lane)
 
     try:
         translated = result["choices"][0]["message"]["content"].strip()
@@ -534,13 +572,71 @@ def daemon_request(action: str, text: str = "") -> dict:
     return response
 
 
-def preconnect() -> None:
+def preconnect(lane: str = "primary") -> None:
     context = translation_context()
-    connection, _ = connection_for(context["endpoint"])
-    try:
-        connection.connect()
-    except OSError:
-        drop_connection(context["endpoint"])
+    with _lane_locks[lane]:
+        connection, _ = connection_for(context["endpoint"], lane)
+        try:
+            connection.connect()
+        except OSError:
+            drop_connection(context["endpoint"], lane)
+
+
+def handle_daemon_connection(
+    connection: socket.socket,
+    stop_event: threading.Event,
+) -> None:
+    with connection:
+        raw = connection.makefile("rb").readline()
+        try:
+            request = json.loads(raw.decode("utf-8"))
+            if not isinstance(request, dict):
+                raise RuntimeError("Translation daemon request must be an object")
+            action = request.get("action")
+            response: dict[str, object] = {"ok": True}
+            if action == "ping":
+                response.update(
+                    {
+                        "protocol": DAEMON_PROTOCOL_VERSION,
+                        "build": DAEMON_BUILD,
+                    }
+                )
+            elif action in ("translate", "benchmark", "speculate"):
+                lane = "speculative" if action == "speculate" else "primary"
+                started = time.monotonic()
+                with _lane_locks[lane]:
+                    translated, api_response, context = (
+                        translate_with_details_direct(
+                            str(request.get("text", "")),
+                            lane,
+                        )
+                    )
+                usage = api_response.get("usage", {})
+                response.update(
+                    {
+                        "text": translated,
+                        "elapsedSeconds": round(time.monotonic() - started, 3),
+                        "model": context["selection"],
+                        "targetLanguage": context["targetLanguage"],
+                        "usage": usage if isinstance(usage, dict) else {},
+                    }
+                )
+            elif action == "stop":
+                stop_event.set()
+            else:
+                raise RuntimeError("Unknown translation daemon action")
+        except (
+            json.JSONDecodeError,
+            UnicodeDecodeError,
+            RuntimeError,
+        ) as error:
+            response = {"ok": False, "error": str(error)}
+        try:
+            connection.sendall(
+                json.dumps(response, ensure_ascii=False).encode("utf-8") + b"\n"
+            )
+        except BrokenPipeError:
+            pass
 
 
 def serve() -> None:
@@ -560,62 +656,27 @@ def serve() -> None:
         server.bind(str(path))
         os.chmod(path, 0o600)
         server.listen(4)
-        needs_preconnect = True
-        running = True
-        while running:
-            connection, _ = server.accept()
-            with connection:
-                raw = connection.makefile("rb").readline()
+        server.settimeout(0.5)
+        stop_event = threading.Event()
+
+        def warm_connections() -> None:
+            for lane in ("primary", "speculative"):
                 try:
-                    request = json.loads(raw.decode("utf-8"))
-                    action = request.get("action")
-                    response: dict[str, object] = {"ok": True}
-                    if action == "ping":
-                        response.update(
-                            {
-                                "protocol": DAEMON_PROTOCOL_VERSION,
-                                "build": DAEMON_BUILD,
-                            }
-                        )
-                    elif action in ("translate", "benchmark"):
-                        started = time.monotonic()
-                        translated, api_response, context = (
-                            translate_with_details_direct(str(request.get("text", "")))
-                        )
-                        usage = api_response.get("usage", {})
-                        response.update(
-                            {
-                                "text": translated,
-                                "elapsedSeconds": round(
-                                    time.monotonic() - started, 3
-                                ),
-                                "model": context["selection"],
-                                "targetLanguage": context["targetLanguage"],
-                                "usage": usage if isinstance(usage, dict) else {},
-                            }
-                        )
-                    elif action == "stop":
-                        running = False
-                    else:
-                        raise RuntimeError("Unknown translation daemon action")
-                except (
-                    json.JSONDecodeError,
-                    UnicodeDecodeError,
-                    RuntimeError,
-                ) as error:
-                    response = {"ok": False, "error": str(error)}
-                try:
-                    connection.sendall(
-                        json.dumps(response, ensure_ascii=False).encode("utf-8") + b"\n"
-                    )
-                except BrokenPipeError:
-                    pass
-            if needs_preconnect and running:
-                try:
-                    preconnect()
+                    preconnect(lane)
                 except RuntimeError:
                     pass
-                needs_preconnect = False
+
+        threading.Thread(target=warm_connections, daemon=True).start()
+        while not stop_event.is_set():
+            try:
+                connection, _ = server.accept()
+            except socket.timeout:
+                continue
+            threading.Thread(
+                target=handle_daemon_connection,
+                args=(connection, stop_event),
+                daemon=True,
+            ).start()
     finally:
         for connection in _http_connections.values():
             connection.close()
@@ -652,6 +713,8 @@ def parse_args() -> argparse.Namespace:
     subparsers.add_parser("hypr-bindings")
     subparsers.add_parser("translate")
     subparsers.add_parser("benchmark")
+    subparsers.add_parser("translate-speculative", help=argparse.SUPPRESS)
+    subparsers.add_parser("translate-direct", help=argparse.SUPPRESS)
     subparsers.add_parser("daemon-status")
     subparsers.add_parser("daemon-stop")
     subparsers.add_parser("serve", help=argparse.SUPPRESS)
@@ -706,6 +769,28 @@ def main() -> int:
             response = daemon_request("benchmark", sys.stdin.read())
             response.pop("ok", None)
             print(json.dumps(response, ensure_ascii=False))
+        elif args.action == "translate-speculative":
+            response = daemon_request("speculate", sys.stdin.read())
+            response.pop("ok", None)
+            print(json.dumps(response, ensure_ascii=False))
+        elif args.action == "translate-direct":
+            started = time.monotonic()
+            translated, response, context = translate_with_details_direct(
+                sys.stdin.read()
+            )
+            usage = response.get("usage", {})
+            print(
+                json.dumps(
+                    {
+                        "text": translated,
+                        "elapsedSeconds": round(time.monotonic() - started, 3),
+                        "model": context["selection"],
+                        "targetLanguage": context["targetLanguage"],
+                        "usage": usage if isinstance(usage, dict) else {},
+                    },
+                    ensure_ascii=False,
+                )
+            )
         elif args.action == "daemon-status":
             print(
                 json.dumps(
