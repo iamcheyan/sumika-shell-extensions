@@ -104,6 +104,9 @@ class Model(S.StatusModel):
         self.translation_binding = "HANGUL"
         self.selecting_translation_model = False
         self.translation_model_index = 0
+        self.selecting_target_language = False
+        self.target_languages = ["English", "Japanese"]
+        self.target_language_index = 0
         self.refresh()
         # Auto-diagnose on init
         self.run_action("diagnose")
@@ -170,6 +173,11 @@ class Model(S.StatusModel):
                 self.translation_models = data.get("models", [])
                 self.translation_model = data.get("model", "")
                 self.translation_target = data.get("targetLanguage", "English")
+                if not self.selecting_target_language:
+                    self.target_language_index = (
+                        self.target_languages.index(self.translation_target)
+                        if self.translation_target in self.target_languages else 0
+                    )
                 self.translation_binding = data.get("translationBinding", "HANGUL")
                 selected = next(
                     (item for item in self.translation_models
@@ -180,11 +188,17 @@ class Model(S.StatusModel):
                     selected.get("label", self.translation_model)
                     if selected else self.translation_model
                 )
-                self.translation_model_index = next(
-                    (index for index, item in enumerate(self.translation_models)
-                     if item.get("value") == self.translation_model),
-                    0,
-                )
+                if not self.selecting_translation_model:
+                    self.translation_model_index = next(
+                        (index for index, item in enumerate(self.translation_models)
+                         if item.get("value") == self.translation_model),
+                        0,
+                    )
+                else:
+                    self.translation_model_index = min(
+                        self.translation_model_index,
+                        max(0, len(self.translation_models) - 1),
+                    )
             except (json.JSONDecodeError, TypeError, AttributeError):
                 self.translation_models = []
                 self.translation_model = ""
@@ -230,6 +244,44 @@ class Model(S.StatusModel):
             "configure",
             "--model", value,
             "--target-language", self.translation_target,
+            "--binding", self.translation_binding,
+            callback=on_saved,
+        )
+
+    def begin_target_language_selection(self):
+        self.target_language_index = (
+            self.target_languages.index(self.translation_target)
+            if self.translation_target in self.target_languages else 0
+        )
+        self.selecting_target_language = True
+        self.dirty = True
+
+    def save_target_language(self):
+        if not self.translation_model:
+            self.message = "Select an OpenCode model first"
+            self.selecting_target_language = False
+            self.dirty = True
+            return
+        target = self.target_languages[self.target_language_index]
+        self.busy = True
+        self.selecting_target_language = False
+        self.message = "Saving target language…"
+
+        def on_saved(lines, err):
+            self.busy = False
+            if err:
+                self.err = "Unable to save target language"
+            else:
+                self.err = ""
+                self.message = f"Target language: {target}"
+            self.refresh()
+            self.dirty = True
+
+        S.run_cmd_bg(
+            _TRANSLATION_CMD,
+            "configure",
+            "--model", self.translation_model,
+            "--target-language", target,
             "--binding", self.translation_binding,
             callback=on_saved,
         )
@@ -465,12 +517,23 @@ def render_right(model, w):
             )))
         return lines
 
+    if model.selecting_target_language:
+        lines.append(("section", "Translation Target Language"))
+        lines.append(("muted", "↑/↓ or j/k to move · Enter to save · Esc to cancel"))
+        lines.append(("text", ""))
+        for index, language in enumerate(model.target_languages):
+            pointer = "▶" if index == model.target_language_index else " "
+            tag = "focus" if index == model.target_language_index else "text"
+            lines.append((tag, f"{pointer} {language}"))
+        return lines
+
     lines.append(("section", "Translation"))
     if model.translation_models:
         label = model.translation_model_label or model.translation_model
         lines.append(("text", S.truncate(f"Model  {label}", max(8, w - 2))))
         lines.append(("muted", f"Key    {friendly(model.translation_binding)} → {model.translation_target}"))
         lines.append(S.action_line("m", "Select OpenCode model", not model.busy))
+        lines.append(S.action_line("l", "Select target language", not model.busy))
     else:
         lines.append(("warn", "No models found in opencode.json"))
         lines.append(("muted", "Model selection is unavailable."))
@@ -620,6 +683,11 @@ def help_items(model):
             [("esc", "cancel")],
             [("↑/↓", "select"), ("enter", "use model")],
         )
+    if model.selecting_target_language:
+        return (
+            [("esc", "cancel")],
+            [("↑/↓", "select"), ("enter", "use language")],
+        )
     if model.trial_transcribing:
         return ([("…", "transcribing")], [])
     if model.trial_listening or model.recording():
@@ -629,6 +697,7 @@ def help_items(model):
     if model.model_ready():
         tool.append(("space", "trial record"))
         tool.append(("m", "translation model"))
+        tool.append(("l", "target language"))
     if model.state() not in ("nomodel", "downloading", "recording"):
         tool += [("e", "bindings"), ("d", "diagnose")]
     return (generic, tool)
@@ -725,6 +794,21 @@ def handle_key(stdscr, m, key):
         m.dirty = True
         return True
 
+    if m.selecting_target_language:
+        if key in (27, ord('q')):
+            m.selecting_target_language = False
+        elif key in (curses.KEY_UP, ord('k')):
+            m.target_language_index = max(0, m.target_language_index - 1)
+        elif key in (curses.KEY_DOWN, ord('j')):
+            m.target_language_index = min(
+                len(m.target_languages) - 1,
+                m.target_language_index + 1,
+            )
+        elif key in (ord('\n'), curses.KEY_ENTER):
+            m.save_target_language()
+        m.dirty = True
+        return True
+
     if key == ord('q'):
         if m.trial_listening or m.recording():
             m.cancel_trial()
@@ -775,7 +859,9 @@ def handle_key(stdscr, m, key):
                 buttons = [
                     ("Refresh status", "r"),
                     ("Key tester", "k"),
-                    ("Edit bindings file", "e"),
+                    ("Edit voice configuration", "e"),
+                    ("Select OpenCode model", "m"),
+                    ("Select target language", "l"),
                     ("Diagnose", "d"),
                     ("Clear recent", "c"),
                     ("Re-run setup", "s"),
@@ -819,6 +905,8 @@ def handle_key(stdscr, m, key):
         m.run_action("edit")
     elif key == ord('m') and not m.busy:
         m.begin_translation_model_selection()
+    elif key == ord('l') and not m.busy:
+        m.begin_target_language_selection()
     elif key == ord('k') and not m.busy:
         m.run_action("key-test")
     elif key == ord('c') and not m.busy:
