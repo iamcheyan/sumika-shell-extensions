@@ -1,14 +1,3 @@
 #!/usr/bin/env bash
 set -euo pipefail
-bindings_file="$HOME/.config/voice_bindings.txt"
-
-mkdir -p "$(dirname "$bindings_file")"
-if [[ ! -f "$bindings_file" ]]; then
-  cat >"$bindings_file" <<'EOF'
-# Sumika Shell Voice Input Keybindings
-# One key combination per line. Format e.g., 'ALT + A' or 'code:472'
-
-EOF
-fi
-
-exec xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.editvoicebindings vi "$bindings_file"
+exec "$(dirname "${BASH_SOURCE[0]}")/sumika-edit-voice-config"

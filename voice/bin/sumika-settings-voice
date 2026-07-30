@@ -16,7 +16,8 @@ _find_tool() {
 LAUNCH_TUI="$(_find_tool sumika-launch-tui)"
 KEY_CAPTURE="$(command -v key-test-launcher 2>/dev/null || echo "$SCRIPT_DIR/key-test-launcher")"
 VOICE_BIND_TUI="$(command -v voice-bind-tui 2>/dev/null || echo "$SCRIPT_DIR/voice-bind-tui")"
-VOICE_EDIT_BINDINGS="$(_find_tool sumika-edit-voice-bindings)"
+VOICE_EDIT_BINDINGS="$(_find_tool sumika-edit-voice-config)"
+VOICE_TRANSLATE="$(_find_tool sumika-voice-translate)"
 VOICE_SETUP="$(_find_tool omarchy-voice-setup)"
 VOICE_DOWNLOAD="$(_find_tool omarchy-voice-download)"
 
@@ -33,7 +34,7 @@ VENV_DIR="${SUMIKA_VOICE_VENV:-$HOME/.cache/sumika-voice/venv}"
 CACHE_DIR="${SUMIKA_VOICE_CACHE:-$HOME/.cache/sumika-voice}"
 SOCKET="/tmp/sumika-voice.sock"
 REC_PID_PATH="${SUMIKA_VOICE_REC_PID:-/tmp/sumika-voice-rec.pid}"
-BINDINGS_FILE="${SUMIKA_VOICE_BINDINGS:-$HOME/.config/voice_bindings.txt}"
+BINDINGS_FILE="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sumika-shell}/voice/config.json"
 
 kv() {
   local key="$1" value="${2:-}"
@@ -172,14 +173,10 @@ friendly_binding() {
 }
 
 list_bindings() {
-  if [[ ! -f "$BINDINGS_FILE" ]]; then
-    return
-  fi
   while IFS= read -r line; do
-    line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    [[ -z "$line" || "$line" == \#* ]] && continue
+    [[ -z "$line" ]] && continue
     printf 'binding=%s\n' "$line"
-  done < "$BINDINGS_FILE"
+  done < <("$VOICE_TRANSLATE" bindings)
 }
 
 status() {
@@ -379,15 +376,10 @@ cancel_setup() {
 add_binding() {
   local raw="${1:-}"
   [[ -n "$raw" ]] || { echo "usage: sumika-settings-voice add <key>" >&2; exit 2; }
-  mkdir -p "$(dirname "$BINDINGS_FILE")"
-  if [[ ! -f "$BINDINGS_FILE" ]]; then
-    printf '# Sumika Shell Voice Input Keybindings\n# One key combination per line. Format e.g., '"'"'ALT + A'"'"' or '"'"'code:472'"'"'\n\n' >"$BINDINGS_FILE"
+  if "$VOICE_TRANSLATE" bindings | grep -Fxq "$raw"; then
+    echo "already-bound"; kv result "noop"; return
   fi
-  while IFS= read -r line; do
-    line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    [[ "$line" == "$raw" ]] && { echo "already-bound"; kv result "noop"; return; }
-  done < "$BINDINGS_FILE" 2>/dev/null || true
-  printf '%s\n' "$raw" >>"$BINDINGS_FILE"
+  "$VOICE_TRANSLATE" add-binding "$raw" >/dev/null
   hyprctl reload >/dev/null 2>&1 || true
   kv result "added"
 }
@@ -395,16 +387,7 @@ add_binding() {
 remove_binding() {
   local raw="${1:-}"
   [[ -n "$raw" ]] || { echo "usage: sumika-settings-voice remove <key>" >&2; exit 2; }
-  [[ -f "$BINDINGS_FILE" ]] || { echo "no-bindings"; kv result "noop"; return; }
-  local tmp
-  tmp="$(mktemp)"
-  while IFS= read -r line; do
-    orig="$line"
-    line="$(printf '%s' "$line" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')"
-    [[ "$line" == "$raw" ]] && continue
-    printf '%s\n' "$orig" >>"$tmp"
-  done < "$BINDINGS_FILE"
-  mv "$tmp" "$BINDINGS_FILE"
+  "$VOICE_TRANSLATE" remove-binding "$raw" >/dev/null
   hyprctl reload >/dev/null 2>&1 || true
   kv result "removed"
 }

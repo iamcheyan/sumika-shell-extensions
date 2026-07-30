@@ -17,12 +17,26 @@ ColumnLayout {
 
     required property var settingsRoot
     readonly property string sumikaRoot: Directories.root
-    readonly property string bindingsPath: `${FileUtils.trimFileProtocol(StandardPaths.home)}/.config/voice_bindings.txt`
+    readonly property string bindingsPath: `${FileUtils.trimFileProtocol(StandardPaths.home)}/.config/sumika-shell/voice/config.json`
+    readonly property string translationHelper: FileUtils.trimFileProtocol(
+        Qt.resolvedUrl("../bin/sumika-voice-translate"))
+    readonly property string keyCaptureTool: `${
+        Quickshell.env("SUMIKA_SHELL_EXTENSIONS_DIR")
+            || FileUtils.trimFileProtocol(StandardPaths.home) + "/.local/share/sumika-shell/extensions"
+    }/keyboard-remap/scripts/key-test-launcher`
     readonly property bool wideLayout: width >= 980
 
     property var voiceBindings: []
     property string bindingMessage: ""
     property bool capturingKey: false
+    property string translationModel: ""
+    property string translationTargetLanguage: "English"
+    property string translationBinding: "HANGUL"
+    property bool translationHasApiKey: false
+    property bool translationReady: false
+    property var translationModels: []
+    property string openCodeConfigPath: ""
+    property string translationMessage: ""
 
     width: parent ? parent.width : 900
     spacing: SettingsTokens.controlGap
@@ -36,12 +50,17 @@ ColumnLayout {
     readonly property bool needsSetup: VoiceInput.state === "setup" || VoiceInput.modelSizeMB === 0
     readonly property bool isRecording: VoiceInput.state === "recording"
     readonly property bool isTranscribing: VoiceInput.state === "transcribing"
+        || VoiceInput.state === "translating"
     readonly property bool isError: VoiceInput.state === "error"
     readonly property string healthTitle: {
         if (pageRoot.needsSetup)
             return "Needs setup"
         if (pageRoot.isRecording)
-            return "Recording…"
+            return VoiceInput.activeMode === "translation"
+                ? `Recording for ${VoiceInput.translationTargetLanguage}…`
+                : "Recording…"
+        if (VoiceInput.state === "translating")
+            return `Translating to ${VoiceInput.translationTargetLanguage}…`
         if (pageRoot.isTranscribing)
             return "Transcribing…"
         if (pageRoot.isError)
@@ -121,20 +140,8 @@ ColumnLayout {
     }
 
     function saveBindings(list) {
-        const pathLiteral = JSON.stringify(pageRoot.bindingsPath)
-        const listLiteral = JSON.stringify(JSON.stringify(list))
-        saveBindingsProc.command = [
-            "python3", "-c",
-            "from pathlib import Path\n" +
-            "import json, subprocess\n" +
-            `path = Path(${pathLiteral})\n` +
-            `bindings = json.loads(${listLiteral})\n` +
-            "path.parent.mkdir(parents=True, exist_ok=True)\n" +
-            "header = \"# Sumika Shell Voice Input Keybindings\\n# One key combination per line. Format e.g., 'ALT + A' or 'code:472'\\n\\n\"\n" +
-            "body = \"\\n\".join(bindings)\n" +
-            "path.write_text(header + body + (\"\\n\" if bindings else \"\"))\n" +
-            "subprocess.run([\"hyprctl\", \"reload\"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)\n"
-        ]
+        saveBindingsProc.command = [pageRoot.translationHelper, "set-bindings",
+            "--translation-binding", pageRoot.translationBinding].concat(list)
         saveBindingsProc.running = true
     }
 
@@ -173,6 +180,27 @@ ColumnLayout {
         pageRoot.bindingMessage = `Added ${pageRoot.friendlyBinding(bind)}`
         pageRoot.saveBindings(next)
         bindingMessageTimer.restart()
+    }
+
+    function refreshTranslationSettings() {
+        if (!translationStatusProc.running)
+            translationStatusProc.running = true
+    }
+
+    function applyTranslationStatus(text) {
+        try {
+            const result = JSON.parse(text.trim())
+            pageRoot.translationModel = result.model || ""
+            pageRoot.translationTargetLanguage = result.targetLanguage || "English"
+            pageRoot.translationBinding = result.translationBinding || "HANGUL"
+            pageRoot.translationHasApiKey = result.hasApiKey === true
+            pageRoot.translationReady = result.ready === true
+            pageRoot.translationModels = result.models || []
+            pageRoot.openCodeConfigPath = result.openCodeConfigPath || ""
+            VoiceInput.refreshTranslationConfig()
+        } catch (error) {
+            pageRoot.translationMessage = "Unable to read translation configuration"
+        }
     }
 
     GridLayout {
@@ -594,6 +622,72 @@ ColumnLayout {
 
                 // Model & engine
                 SettingsSection {
+                    title: "Voice translation · HANGUL"
+
+                    SettingsRow {
+                        iconName: "translate"
+                        label: "Translated voice input"
+                        description: "Speak Chinese locally, translate online, then paste into the focused app"
+                        value: pageRoot.translationReady ? "ready" : "setup"
+                        valueColor: pageRoot.translationReady
+                            ? SettingsTokens.accent
+                            : SettingsTokens.warning
+                        clickable: false
+                    }
+
+                    SettingsRow {
+                        iconName: "model_training"
+                        label: "OpenCode model"
+                        description: pageRoot.translationModels.length > 0
+                            ? "Select from the Voice Model Manager TUI"
+                            : "No compatible models found in opencode.json"
+                        value: pageRoot.translationModel.length > 0
+                            ? pageRoot.translationModel
+                            : "unavailable"
+                        valueColor: pageRoot.translationModels.length > 0
+                            ? SettingsTokens.accent
+                            : SettingsTokens.warning
+                        onClicked: pageRoot.openExternal(["sumika-launch-settings-voice-tui"])
+                    }
+
+                    SettingsRow {
+                        iconName: "description"
+                        label: "Voice configuration"
+                        description: pageRoot.bindingsPath
+                        value: `${pageRoot.translationBinding} → ${pageRoot.translationTargetLanguage}`
+                        valueColor: SettingsTokens.fg
+                        onClicked: pageRoot.openExternal(["sumika-edit-voice-config"])
+                    }
+
+                    StyledText {
+                        visible: pageRoot.translationMessage.length > 0
+                        Layout.fillWidth: true
+                        Layout.leftMargin: 4
+                        text: pageRoot.translationMessage
+                        color: pageRoot.translationReady
+                            ? SettingsTokens.accent
+                            : SettingsTokens.warning
+                        font.pixelSize: Appearance.font.pixelSize.smaller
+                        wrapMode: Text.WordWrap
+                    }
+
+                    ButtonRow {
+                        SettingsButton {
+                            label: "Model Manager (TUI)"
+                            iconName: "open_in_new"
+                            onClicked: pageRoot.openExternal(["sumika-launch-settings-voice-tui"])
+                        }
+                        SettingsButton {
+                            label: "Reload OpenCode"
+                            iconName: "refresh"
+                            enabledState: !translationStatusProc.running
+                            onClicked: pageRoot.refreshTranslationSettings()
+                        }
+                    }
+                }
+
+                // Model & engine
+                SettingsSection {
                     title: "Model & engine"
 
                     SettingsRow {
@@ -681,7 +775,7 @@ ColumnLayout {
 
     Process {
         id: voiceBindingsProc
-        command: ["bash", "-c", `cat '${pageRoot.bindingsPath}' 2>/dev/null || true`]
+        command: [pageRoot.translationHelper, "bindings"]
         running: true
         stdout: StdioCollector {
             id: voiceBindingsCollector
@@ -702,6 +796,7 @@ ColumnLayout {
         running: false
         onExited: (exitCode) => {
             pageRoot.refreshBindings()
+            Quickshell.execDetached(["hyprctl", "reload"])
             if (exitCode !== 0)
                 pageRoot.bindingMessage = "Failed to save bindings"
             bindingMessageTimer.restart()
@@ -711,7 +806,7 @@ ColumnLayout {
     // Capture stays over Settings; on close we read state/clipboard and append.
     Process {
         id: captureKeyProc
-        command: [`${pageRoot.sumikaRoot}/scripts/key-test-launcher`, "--hotkey"]
+        command: [pageRoot.keyCaptureTool, "--hotkey"]
         running: false
         onExited: {
             readCaptureProc.running = true
@@ -769,5 +864,23 @@ ColumnLayout {
         onTriggered: pageRoot.bindingMessage = ""
     }
 
-    Component.onCompleted: pageRoot.refreshBindings()
+    Process {
+        id: translationStatusProc
+        command: [pageRoot.translationHelper, "status"]
+        stdout: StdioCollector {
+            onStreamFinished: pageRoot.applyTranslationStatus(text)
+        }
+    }
+
+    Timer {
+        id: translationMessageTimer
+        interval: 4000
+        repeat: false
+        onTriggered: pageRoot.translationMessage = ""
+    }
+
+    Component.onCompleted: {
+        pageRoot.refreshBindings()
+        pageRoot.refreshTranslationSettings()
+    }
 }

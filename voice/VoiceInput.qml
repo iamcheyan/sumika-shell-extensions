@@ -16,6 +16,7 @@ Singleton {
     property real recordingDuration: 0
     property string lastTranscription: ""
     property string lastError: ""
+    property string activeMode: "dictation"
     readonly property real maxRecordingDuration: 90.0
 
     // ── 历史记录 ──
@@ -26,6 +27,15 @@ Singleton {
     property int modelSizeMB: 0
     property bool daemonRunning: false
     property bool transcriptionDelivered: false
+    property bool translationReady: false
+    property bool translationHasApiKey: false
+    property string translationEndpoint: ""
+    property string translationModel: ""
+    property string translationTargetLanguage: "English"
+    property string translationConfigPath: ""
+    property string translationSource: ""
+    property string translationOutput: ""
+    property string translationError: ""
 
     readonly property string cacheDir: FileUtils.trimFileProtocol(`${Directories.genericCache}/sumika-voice`)
     readonly property string modelDir: `${root.cacheDir}/sense-voice-small-int8`
@@ -40,6 +50,7 @@ Singleton {
 
     // paste-at-cursor lives in the extension's own bin/ dir
     readonly property string pasteScript: `${root.shareDir}/sumika-paste-at-cursor`
+    readonly property string translationHelper: `${root.shareDir}/sumika-voice-translate`
 
     // 录音开始时记录焦点窗口，转写完成后贴回该窗口（避免转写期间焦点跑到顶栏）。
     property string focusedWindowClass: ""
@@ -72,6 +83,7 @@ Singleton {
             root.checkState()
             root.refreshModelInfo()
             root.refreshDaemonStatus()
+            root.refreshTranslationConfig()
         } else {
             console.log("[VoiceInput] voice module disabled, skipping init")
         }
@@ -167,6 +179,32 @@ Singleton {
         stdout: SplitParser {
             onRead: (line) => {
                 root.daemonRunning = (line === "running")
+            }
+        }
+    }
+
+    function refreshTranslationConfig() {
+        if (!translationStatusProc.running)
+            translationStatusProc.running = true
+    }
+
+    Process {
+        id: translationStatusProc
+        command: [root.translationHelper, "status"]
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const result = JSON.parse(text.trim())
+                    root.translationReady = result.ready === true
+                    root.translationHasApiKey = result.hasApiKey === true
+                    root.translationEndpoint = result.endpoint || ""
+                    root.translationModel = result.model || ""
+                    root.translationTargetLanguage = result.targetLanguage || "English"
+                    root.translationConfigPath = result.configPath || ""
+                } catch (error) {
+                    root.translationReady = false
+                    console.warn("[VoiceInput] unable to read translation config:", error)
+                }
             }
         }
     }
@@ -284,7 +322,33 @@ Singleton {
         else if (state === "recording") stopRecording()
     }
 
-    function startRecording() {
+    function toggleTranslation() {
+        if (state === "setup") {
+            root.notify("语音翻译尚未就绪", "请先完成本地语音模型设置", "dialog-warning")
+            return
+        }
+        if (state === "error") {
+            root.checkState()
+            return
+        }
+        if (state === "idle") {
+            if (!root.translationReady) {
+                root.refreshTranslationConfig()
+                root.notify(
+                    "语音翻译尚未配置",
+                    "请在 Voice Input 设置中配置 API Endpoint、模型、目标语言和 API Key",
+                    "dialog-warning"
+                )
+                return
+            }
+            root.startRecording("translation")
+        } else if (state === "recording") {
+            root.stopRecording()
+        }
+    }
+
+    function startRecording(mode) {
+        root.activeMode = mode || "dictation"
         root.testMode = false
         root.transcriptionDelivered = false
         root.recordingDuration = 0
@@ -348,9 +412,10 @@ Singleton {
                             }
                             root.transcriptionDelivered = true
                             root.lastTranscription = result.text
-                            root.addToHistory(result.text)
                             if (root.testMode) {
                                 root.onTestTranscriptionResult(result.text)
+                            } else if (root.activeMode === "translation") {
+                                root.startTranslation(result.text)
                             } else {
                                 root.onTranscriptionResult(result.text)
                             }
@@ -382,14 +447,88 @@ Singleton {
     }
 
     function onTranscriptionResult(text) {
+        root.addToHistory(text)
+        root.deliverText(text, "voice")
+    }
+
+    function deliverText(text, source) {
         const target = root.pasteTargetForWindow()
-        console.log("[VoiceInput] onTranscriptionResult text='" + text
+        console.log("[VoiceInput] deliverText mode=" + root.activeMode + " text='" + text
             + "' class=" + root.focusedWindowClass + " target=" + target)
         Quickshell.execDetached(["bash", "-c",
             `payload=$(mktemp); trap 'rm -f "$payload"' EXIT; ` +
             `printf '%s' '${StringUtils.shellSingleQuoteEscape(text)}' > "$payload" && ` +
-            `wl-copy < "$payload" && SUMIKA_PASTE_SOURCE=voice ` +
+            `wl-copy < "$payload" && SUMIKA_PASTE_SOURCE=${source || "voice"} ` +
             `'${root.pasteScript}' --file "$payload" auto '${StringUtils.shellSingleQuoteEscape(root.focusedWindowClass)}' '${StringUtils.shellSingleQuoteEscape(target)}'`])
+    }
+
+    function startTranslation(text) {
+        root.translationSource = text
+        root.translationOutput = ""
+        root.translationError = ""
+        root.state = "translating"
+        translationProc.stdinEnabled = true
+        translationProc.running = true
+    }
+
+    Process {
+        id: translationProc
+        command: [root.translationHelper, "translate"]
+
+        stdout: StdioCollector {
+            onStreamFinished: {
+                try {
+                    const result = JSON.parse(text.trim())
+                    root.translationOutput = result.text || ""
+                } catch (error) {
+                    root.translationError = "翻译服务返回了无效结果"
+                }
+            }
+        }
+
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const output = text.trim()
+                if (output.length === 0)
+                    return
+                try {
+                    const result = JSON.parse(output)
+                    root.translationError = result.error || output
+                } catch (error) {
+                    root.translationError = output
+                }
+            }
+        }
+
+        onRunningChanged: {
+            if (running) {
+                write(root.translationSource)
+                stdinEnabled = false
+            }
+        }
+
+        onExited: (exitCode, exitStatus) => {
+            if (root.state !== "translating")
+                return
+            if (exitCode === 0 && root.translationOutput.length > 0) {
+                root.lastTranscription = root.translationOutput
+                root.addToHistory(root.translationOutput)
+                root.deliverText(root.translationOutput, "voice-translation")
+                root.state = "success"
+            } else {
+                root.lastTranscription = root.translationSource
+                root.lastError = root.translationError
+                    || `语音翻译失败 (code ${exitCode})`
+                Quickshell.execDetached(["wl-copy", root.translationSource])
+                root.notify(
+                    "语音翻译失败",
+                    root.lastError + "；中文识别结果已复制到剪贴板",
+                    "dialog-error"
+                )
+                root.state = "error"
+            }
+            root.activeMode = "dictation"
+        }
     }
 
     // ── 调试：不自动粘贴，只复制文本并打开设置面板展示结果 ──
@@ -424,6 +563,7 @@ Singleton {
             return
         }
         root.testMode = true
+        root.activeMode = "dictation"
         root.transcriptionDelivered = false
         root.recordingDuration = 0
         root.lastTranscription = ""

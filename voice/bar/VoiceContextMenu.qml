@@ -21,9 +21,9 @@ ContextMenuWindow {
 
     ContextMenuItem {
         nerdIcon: NerdIconMap.keyboard
-        labelText: "Edit Keybindings"
+        labelText: "Edit Configuration File"
         onClicked: {
-            Quickshell.execDetached(["sumika-edit-voice-bindings"]);
+            Quickshell.execDetached(["sumika-edit-voice-config"]);
             root.close();
         }
     }

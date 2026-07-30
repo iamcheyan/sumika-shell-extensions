@@ -22,17 +22,24 @@ import sys
 import os
 import time
 
-# Point SUMIKA_SHELL_ROOT at this extension's root so the shared TUI framework's
-# run_cmd resolves scripts in our own bin/ directory.
 _EXT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if os.path.isfile(os.path.join(_EXT_ROOT, "module.json")):
-    os.environ["SUMIKA_SHELL_ROOT"] = _EXT_ROOT
-
-_omd_bin = os.path.join(
-    os.environ.get("SUMIKA_SHELL_ROOT") or os.path.expanduser("~/.config/sumika-shell"), "bin")
-if _omd_bin not in sys.path:
-    sys.path.insert(0, _omd_bin)
+# The shared TUI framework belongs to Sumika core. Extension commands are
+# already added to PATH by ModuleLoader; do not replace SUMIKA_SHELL_ROOT with
+# the extension root or the shared framework becomes unreachable.
+_core_root = os.environ.get("SUMIKA_SHELL_ROOT", "")
+if not _core_root:
+    action = os.path.realpath(
+        __import__("shutil").which("sumika-action") or
+        os.path.expanduser("~/development/OMD/bin/sumika-action")
+    )
+    _core_root = os.path.dirname(os.path.dirname(action))
+_core_bin = os.path.join(_core_root, "bin")
+if _core_bin not in sys.path:
+    sys.path.insert(0, _core_bin)
 import sumika_tui_framework as S
+
+_VOICE_CMD = os.path.join(_EXT_ROOT, "bin", "sumika-settings-voice")
+_TRANSLATION_CMD = os.path.join(_EXT_ROOT, "bin", "sumika-voice-translate")
 
 FRIENDLY_MAP = {
     "ALT + A": "Alt + A", "code:472": "Globe (Fn)", "XF86Tools": "F13 / Tools",
@@ -90,6 +97,13 @@ class Model(S.StatusModel):
         self.rec_start = 0.0
         self.last_result_text = ""
         self.last_result_ts = 0
+        self.translation_models = []
+        self.translation_model = ""
+        self.translation_model_label = ""
+        self.translation_target = "English"
+        self.translation_binding = "HANGUL"
+        self.selecting_translation_model = False
+        self.translation_model_index = 0
         self.refresh()
         # Auto-diagnose on init
         self.run_action("diagnose")
@@ -118,7 +132,7 @@ class Model(S.StatusModel):
         self.refreshing = True
         self.dirty = True
         fetch_logs = self.state() == "downloading"
-        rc = S.RefreshCounter(2 if fetch_logs else 1, self, on_done=lambda: setattr(self, 'refreshing', False))
+        rc = S.RefreshCounter(3 if fetch_logs else 2, self, on_done=lambda: setattr(self, 'refreshing', False))
         def on_status(lines, err):
             if err:
                 self.err = f"status failed: {err}"
@@ -145,9 +159,80 @@ class Model(S.StatusModel):
         def on_logs(lines, err):
             if not err:
                 self.logs = S.clip_lines(lines, 200) if lines else []
-        S.run_cmd_bg("sumika-settings-voice", "status", callback=rc.cb(on_status))
+        def on_translation(lines, err):
+            if err or not lines:
+                self.translation_models = []
+                self.translation_model = ""
+                self.translation_model_label = ""
+                return
+            try:
+                data = json.loads(lines[-1])
+                self.translation_models = data.get("models", [])
+                self.translation_model = data.get("model", "")
+                self.translation_target = data.get("targetLanguage", "English")
+                self.translation_binding = data.get("translationBinding", "HANGUL")
+                selected = next(
+                    (item for item in self.translation_models
+                     if item.get("value") == self.translation_model),
+                    None,
+                )
+                self.translation_model_label = (
+                    selected.get("label", self.translation_model)
+                    if selected else self.translation_model
+                )
+                self.translation_model_index = next(
+                    (index for index, item in enumerate(self.translation_models)
+                     if item.get("value") == self.translation_model),
+                    0,
+                )
+            except (json.JSONDecodeError, TypeError, AttributeError):
+                self.translation_models = []
+                self.translation_model = ""
+                self.translation_model_label = ""
+        S.run_cmd_bg(_VOICE_CMD, "status", callback=rc.cb(on_status))
+        S.run_cmd_bg(_TRANSLATION_CMD, "status", callback=rc.cb(on_translation))
         if fetch_logs:
-            S.run_cmd_bg("sumika-settings-voice", "logs", callback=rc.cb(on_logs))
+            S.run_cmd_bg(_VOICE_CMD, "logs", callback=rc.cb(on_logs))
+
+    def begin_translation_model_selection(self):
+        if not self.translation_models:
+            self.message = "No models found in opencode.json"
+            self.dirty = True
+            return
+        self.selecting_translation_model = True
+        self.dirty = True
+
+    def save_translation_model(self):
+        if not self.translation_models:
+            return
+        selected = self.translation_models[self.translation_model_index]
+        if not selected.get("enabled", False):
+            self.message = "Selected OpenCode model has no usable credentials"
+            self.dirty = True
+            return
+        self.busy = True
+        self.selecting_translation_model = False
+        self.message = "Saving translation model…"
+        value = selected.get("value", "")
+
+        def on_saved(lines, err):
+            self.busy = False
+            if err:
+                self.err = "Unable to save translation model"
+            else:
+                self.err = ""
+                self.message = "Translation model saved"
+            self.refresh()
+            self.dirty = True
+
+        S.run_cmd_bg(
+            _TRANSLATION_CMD,
+            "configure",
+            "--model", value,
+            "--target-language", self.translation_target,
+            "--binding", self.translation_binding,
+            callback=on_saved,
+        )
 
     def run_action(self, action):
         self.busy = True
@@ -205,7 +290,7 @@ class Model(S.StatusModel):
                 self.trial_peak_level = 0
                 self.append_log("[trial] Recording cancelled — audio discarded (not transcribed)")
             self.dirty = True
-        S.run_cmd_bg("sumika-settings-voice", action, callback=cb)
+        S.run_cmd_bg(_VOICE_CMD, action, callback=cb)
 
     def start_trial(self):
         if not self.model_ready():
@@ -350,7 +435,7 @@ def render_voice_actions(model, w):
     lines = []
     if model.model_ready():
         lines.append(S.primary_line("Trial record", "space", not model.busy))
-        lines.append(S.action_line("e", "Edit bindings", not model.busy))
+        lines.append(S.action_line("e", "Edit voice configuration", not model.busy))
         lines.append(S.action_line("d", "Diagnose", not model.busy))
     else:
         lines.append(S.action_line("d", "Diagnose", not model.busy))
@@ -360,6 +445,36 @@ def render_voice_actions(model, w):
 def render_right(model, w):
     lines = []
     st = model.state()
+
+    if model.selecting_translation_model:
+        lines.append(("section", "OpenCode Translation Models"))
+        lines.append(("muted", "↑/↓ or j/k to move · Enter to save · Esc to cancel"))
+        lines.append(("text", ""))
+        if not model.translation_models:
+            lines.append(("warn", "No models found in opencode.json"))
+            return lines
+        for index, item in enumerate(model.translation_models):
+            pointer = "▶" if index == model.translation_model_index else " "
+            suffix = "" if item.get("enabled", False) else "  [credentials missing]"
+            tag = "focus" if index == model.translation_model_index else (
+                "text" if item.get("enabled", False) else "muted"
+            )
+            lines.append((tag, S.truncate(
+                f"{pointer} {item.get('label', item.get('value', ''))}{suffix}",
+                max(8, w - 2),
+            )))
+        return lines
+
+    lines.append(("section", "Translation"))
+    if model.translation_models:
+        label = model.translation_model_label or model.translation_model
+        lines.append(("text", S.truncate(f"Model  {label}", max(8, w - 2))))
+        lines.append(("muted", f"Key    {friendly(model.translation_binding)} → {model.translation_target}"))
+        lines.append(S.action_line("m", "Select OpenCode model", not model.busy))
+    else:
+        lines.append(("warn", "No models found in opencode.json"))
+        lines.append(("muted", "Model selection is unavailable."))
+    lines.append(("text", ""))
 
     if st == "downloading":
         pct = S.parse_int(model.val("download.percent", "0"))
@@ -500,6 +615,11 @@ def hero_info(model):
 
 
 def help_items(model):
+    if model.selecting_translation_model:
+        return (
+            [("esc", "cancel")],
+            [("↑/↓", "select"), ("enter", "use model")],
+        )
     if model.trial_transcribing:
         return ([("…", "transcribing")], [])
     if model.trial_listening or model.recording():
@@ -508,6 +628,7 @@ def help_items(model):
     tool = [("enter", "record" if model.state() == "idle" else ("setup" if model.state() == "nomodel" else "cancel"))]
     if model.model_ready():
         tool.append(("space", "trial record"))
+        tool.append(("m", "translation model"))
     if model.state() not in ("nomodel", "downloading", "recording"):
         tool += [("e", "bindings"), ("d", "diagnose")]
     return (generic, tool)
@@ -589,6 +710,21 @@ def view(stdscr, m):
 
 # ── input ────────────────────────────────────────────────────────────────
 def handle_key(stdscr, m, key):
+    if m.selecting_translation_model:
+        if key in (27, ord('q')):
+            m.selecting_translation_model = False
+        elif key in (curses.KEY_UP, ord('k')):
+            m.translation_model_index = max(0, m.translation_model_index - 1)
+        elif key in (curses.KEY_DOWN, ord('j')):
+            m.translation_model_index = min(
+                len(m.translation_models) - 1,
+                m.translation_model_index + 1,
+            )
+        elif key in (ord('\n'), curses.KEY_ENTER):
+            m.save_translation_model()
+        m.dirty = True
+        return True
+
     if key == ord('q'):
         if m.trial_listening or m.recording():
             m.cancel_trial()
@@ -681,6 +817,8 @@ def handle_key(stdscr, m, key):
         m.run_action("test")
     elif key == ord('e') and not m.busy:
         m.run_action("edit")
+    elif key == ord('m') and not m.busy:
+        m.begin_translation_model_selection()
     elif key == ord('k') and not m.busy:
         m.run_action("key-test")
     elif key == ord('c') and not m.busy:

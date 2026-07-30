@@ -13,9 +13,8 @@ import atexit
 import time
 
 # ── Paths ──
-CONFIG_DIR = os.path.expanduser("~/.config")
-BINDINGS_FILE = os.path.join(CONFIG_DIR, "voice_bindings.txt")
 SCRIPT_DIR = os.path.dirname(os.path.realpath(__file__))
+VOICE_HELPER = os.path.join(os.path.dirname(SCRIPT_DIR), "bin", "sumika-voice-translate")
 KEY_TEST_LAUNCHER = os.path.join(SCRIPT_DIR, "key-test-launcher")
 sys.path.insert(0, SCRIPT_DIR)
 
@@ -25,27 +24,33 @@ CAPTURE_STATE = os.path.join(_state_home, "key-capture.json")
 
 # ── Load/Save ──
 def load_bindings():
-    if not os.path.exists(BINDINGS_FILE):
-        return list(DEFAULT_BINDINGS)
-    bindings = []
     try:
-        with open(BINDINGS_FILE, "r") as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#"):
-                    bindings.append(line)
+        result = subprocess.run(
+            [VOICE_HELPER, "bindings"],
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        bindings = [line.strip() for line in result.stdout.splitlines() if line.strip()]
     except Exception:
         return list(DEFAULT_BINDINGS)
     return bindings if bindings else list(DEFAULT_BINDINGS)
 
 def save_bindings(bindings):
     try:
-        os.makedirs(CONFIG_DIR, exist_ok=True)
-        with open(BINDINGS_FILE, "w") as f:
-            f.write("# Sumika Shell Voice Input Keybindings\n")
-            f.write("# One key combination per line. Format e.g., 'ALT + A' or 'code:472'\n\n")
-            for b in bindings:
-                f.write(f"{b}\n")
+        status = subprocess.run(
+            [VOICE_HELPER, "status"],
+            text=True,
+            capture_output=True,
+            check=True,
+        )
+        translation_binding = json.loads(status.stdout).get("translationBinding", "HANGUL")
+        subprocess.run(
+            [VOICE_HELPER, "set-bindings", "--translation-binding", translation_binding, *bindings],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            check=True,
+        )
         # Reload Hyprland config
         subprocess.run(["hyprctl", "reload"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         return True

@@ -1,0 +1,417 @@
+#!/usr/bin/env python3
+
+"""Translate local voice transcriptions with models configured in OpenCode."""
+
+from __future__ import annotations
+
+import argparse
+import json
+import os
+from pathlib import Path
+import re
+import sys
+import tempfile
+import urllib.error
+import urllib.request
+
+
+DEFAULTS = {
+    "model": "",
+    "targetLanguage": "English",
+}
+DEFAULT_BINDINGS = ["ALT + A", "code:472"]
+DEFAULT_TRANSLATION_BINDING = "HANGUL"
+
+
+def xdg_path(variable: str, fallback: Path) -> Path:
+    value = os.environ.get(variable, "").strip()
+    return Path(value).expanduser() if value else fallback
+
+
+def sumika_config_home() -> Path:
+    configured = os.environ.get("SUMIKA_SHELL_CONFIG_HOME", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "sumika-shell"
+
+
+def voice_config_path() -> Path:
+    return sumika_config_home() / "voice/config.json"
+
+
+def opencode_config_path() -> Path:
+    configured = os.environ.get("OPENCODE_CONFIG", "").strip()
+    if configured:
+        return Path(configured).expanduser()
+    return xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "opencode/opencode.json"
+
+
+def opencode_auth_path() -> Path:
+    return xdg_path("XDG_DATA_HOME", Path.home() / ".local/share") / "opencode/auth.json"
+
+
+def read_json(path: Path) -> dict:
+    try:
+        with path.open(encoding="utf-8") as stream:
+            value = json.load(stream)
+        return value if isinstance(value, dict) else {}
+    except FileNotFoundError:
+        return {}
+    except (json.JSONDecodeError, OSError) as error:
+        raise RuntimeError(f"Unable to read {path}: {error}") from error
+
+
+def load_voice_config() -> dict[str, str]:
+    loaded = read_json(voice_config_path())
+    translation = loaded.get("translation", {})
+    if not isinstance(translation, dict):
+        translation = {}
+    return {
+        key: str(translation.get(key, default)).strip()
+        for key, default in DEFAULTS.items()
+    }
+
+
+def load_bindings() -> tuple[list[str], str]:
+    loaded = read_json(voice_config_path())
+    voice_input = loaded.get("voiceInput", {})
+    raw_bindings = (
+        voice_input.get("bindings", DEFAULT_BINDINGS)
+        if isinstance(voice_input, dict)
+        else DEFAULT_BINDINGS
+    )
+    bindings = (
+        [str(value).strip() for value in raw_bindings if str(value).strip()]
+        if isinstance(raw_bindings, list)
+        else list(DEFAULT_BINDINGS)
+    )
+    translation = loaded.get("translation", {})
+    translation_binding = (
+        str(translation.get("binding", DEFAULT_TRANSLATION_BINDING)).strip()
+        if isinstance(translation, dict)
+        else DEFAULT_TRANSLATION_BINDING
+    )
+    return bindings, translation_binding or DEFAULT_TRANSLATION_BINDING
+
+
+def save_voice_config(config: dict[str, str]) -> None:
+    path = voice_config_path()
+    loaded = read_json(path)
+    previous = loaded.get("translation", {})
+    binding = (
+        str(previous.get("binding", DEFAULT_TRANSLATION_BINDING)).strip()
+        if isinstance(previous, dict)
+        else DEFAULT_TRANSLATION_BINDING
+    )
+    loaded["translation"] = {
+        key: str(config.get(key, default)).strip()
+        for key, default in DEFAULTS.items()
+    }
+    loaded["translation"]["binding"] = binding or DEFAULT_TRANSLATION_BINDING
+    write_voice_config(loaded)
+
+
+def write_voice_config(loaded: dict) -> None:
+    path = voice_config_path()
+    path.parent.mkdir(parents=True, exist_ok=True)
+    fd, temporary = tempfile.mkstemp(prefix=".config.", suffix=".json", dir=path.parent)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump(loaded, stream, ensure_ascii=False, indent=2)
+            stream.write("\n")
+        os.chmod(temporary, 0o644)
+        os.replace(temporary, path)
+    finally:
+        try:
+            os.unlink(temporary)
+        except FileNotFoundError:
+            pass
+
+
+def save_bindings(bindings: list[str], translation_binding: str) -> None:
+    loaded = read_json(voice_config_path())
+    loaded.pop("bindings", None)
+    loaded["voiceInput"] = {
+        "bindings": list(dict.fromkeys(value.strip() for value in bindings if value.strip()))
+    }
+    translation = loaded.get("translation", {})
+    if not isinstance(translation, dict):
+        translation = {}
+    translation["binding"] = translation_binding.strip() or DEFAULT_TRANSLATION_BINDING
+    loaded["translation"] = translation
+    write_voice_config(loaded)
+
+
+def resolve_reference(value: object) -> str:
+    text = str(value or "").strip()
+    match = re.fullmatch(r"\{env:([^}]+)\}", text)
+    if match:
+        return os.environ.get(match.group(1), "").strip()
+    match = re.fullmatch(r"\{file:([^}]+)\}", text)
+    if match:
+        try:
+            return Path(match.group(1)).expanduser().read_text(encoding="utf-8").strip()
+        except OSError:
+            return ""
+    return text
+
+
+def configured_models() -> list[dict[str, object]]:
+    providers = read_json(opencode_config_path()).get("provider", {})
+    if not isinstance(providers, dict):
+        return []
+    result: list[dict[str, object]] = []
+    for provider_id, provider in providers.items():
+        if not isinstance(provider, dict):
+            continue
+        options = provider.get("options", {})
+        if not isinstance(options, dict):
+            options = {}
+        models = provider.get("models", {})
+        if not isinstance(models, dict):
+            continue
+        for model_key, model_config in models.items():
+            details = model_config if isinstance(model_config, dict) else {}
+            model_id = str(details.get("id") or model_key).strip()
+            provider_name = str(provider.get("name") or provider_id).strip()
+            model_name = str(details.get("name") or model_key).strip()
+            result.append(
+                {
+                    "value": f"{provider_id}/{model_key}",
+                    "label": f"{provider_name} · {model_name}",
+                    "provider": str(provider_id),
+                    "model": model_id,
+                    "api": str(provider.get("api") or ""),
+                    "baseURL": resolve_reference(options.get("baseURL")),
+                    "hasApiKey": bool(resolve_api_key(str(provider_id), options)),
+                }
+            )
+    return result
+
+
+def resolve_api_key(provider_id: str, options: dict) -> str:
+    configured = resolve_reference(options.get("apiKey"))
+    if configured:
+        return configured
+    auth = read_json(opencode_auth_path()).get(provider_id, {})
+    if isinstance(auth, dict) and auth.get("type") == "api":
+        return resolve_reference(auth.get("key"))
+    return ""
+
+
+def selected_model(selection: str) -> dict[str, object] | None:
+    return next((item for item in configured_models() if item["value"] == selection), None)
+
+
+def endpoint_for(base_url: str) -> str:
+    base = base_url.rstrip("/")
+    if not base:
+        return ""
+    return f"{base}/chat/completions"
+
+
+def status() -> None:
+    config = load_voice_config()
+    bindings, translation_binding = load_bindings()
+    models = configured_models()
+    selected = next((item for item in models if item["value"] == config["model"]), None)
+    if selected is None and models:
+        selected = models[0]
+    selection = str(selected["value"]) if selected else ""
+    endpoint = endpoint_for(str(selected["baseURL"])) if selected else ""
+    has_key = bool(selected and selected["hasApiKey"])
+    supported = bool(selected and selected["api"] in ("", "openai"))
+    print(
+        json.dumps(
+            {
+                "model": selection,
+                "modelName": str(selected["model"]) if selected else "",
+                "targetLanguage": config["targetLanguage"],
+                "bindings": bindings,
+                "translationBinding": translation_binding,
+                "endpoint": endpoint,
+                "hasApiKey": has_key,
+                "ready": bool(selected and endpoint and has_key and supported),
+                "models": [
+                    {
+                        "value": item["value"],
+                        "label": item["label"],
+                        "enabled": bool(
+                            item["baseURL"]
+                            and item["hasApiKey"]
+                            and item["api"] in ("", "openai")
+                        ),
+                    }
+                    for item in models
+                ],
+                "configPath": str(voice_config_path()),
+                "openCodeConfigPath": str(opencode_config_path()),
+            },
+            ensure_ascii=False,
+        )
+    )
+
+
+def provider_for(selection: str) -> tuple[dict, dict]:
+    if "/" not in selection:
+        raise RuntimeError("Select a model from the OpenCode configuration")
+    provider_id, model_key = selection.split("/", 1)
+    provider = read_json(opencode_config_path()).get("provider", {}).get(provider_id)
+    if not isinstance(provider, dict):
+        raise RuntimeError(f"OpenCode provider no longer exists: {provider_id}")
+    models = provider.get("models", {})
+    model = models.get(model_key) if isinstance(models, dict) else None
+    if not isinstance(model, dict):
+        raise RuntimeError(f"OpenCode model no longer exists: {selection}")
+    return provider, model
+
+
+def translate(text: str) -> str:
+    source = text.strip()
+    if not source:
+        raise RuntimeError("Local transcription is empty")
+    config = load_voice_config()
+    selection = config["model"]
+    if not selection:
+        models = configured_models()
+        selection = str(models[0]["value"]) if models else ""
+    provider, model_config = provider_for(selection)
+    if provider.get("api") not in (None, "", "openai"):
+        raise RuntimeError("The selected OpenCode provider is not OpenAI compatible")
+    options = provider.get("options", {})
+    if not isinstance(options, dict):
+        options = {}
+    endpoint = endpoint_for(resolve_reference(options.get("baseURL")))
+    api_key = resolve_api_key(selection.split("/", 1)[0], options)
+    model = str(model_config.get("id") or selection.split("/", 1)[1]).strip()
+    target = config["targetLanguage"]
+    if not endpoint:
+        raise RuntimeError("The selected OpenCode provider has no baseURL")
+    if not api_key:
+        raise RuntimeError("The selected OpenCode provider has no API key")
+    if not target:
+        raise RuntimeError("Target language is not configured")
+
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "system",
+                "content": (
+                    f"You are a precise translation engine. Translate the user's Chinese "
+                    f"speech transcription into {target}. Preserve meaning, tone, names, "
+                    "numbers, and formatting. Return only the translated text, with no "
+                    "explanation, labels, or quotation marks."
+                ),
+            },
+            {"role": "user", "content": source},
+        ],
+    }
+    request = urllib.request.Request(
+        endpoint,
+        data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        headers={
+            "Authorization": f"Bearer {api_key}",
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=45) as response:
+            result = json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as error:
+        detail = ""
+        try:
+            body = json.loads(error.read().decode("utf-8"))
+            raw_error = body.get("error", {})
+            detail = str(raw_error.get("message", "") if isinstance(raw_error, dict) else raw_error).strip()
+        except Exception:
+            pass
+        raise RuntimeError(detail or f"Translation API returned HTTP {error.code}") from error
+    except urllib.error.URLError as error:
+        raise RuntimeError(f"Unable to reach translation API: {error.reason}") from error
+    except (json.JSONDecodeError, UnicodeDecodeError) as error:
+        raise RuntimeError("Translation API returned invalid JSON") from error
+
+    try:
+        translated = result["choices"][0]["message"]["content"].strip()
+    except (KeyError, IndexError, TypeError, AttributeError) as error:
+        raise RuntimeError("Translation API response does not contain translated text") from error
+    if not translated:
+        raise RuntimeError("Translation API returned empty text")
+    return translated
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    subparsers = parser.add_subparsers(dest="action", required=True)
+    subparsers.add_parser("status")
+    configure = subparsers.add_parser("configure")
+    configure.add_argument("--model", required=True)
+    configure.add_argument("--target-language", required=True)
+    configure.add_argument("--binding", default="")
+    subparsers.add_parser("bindings")
+    set_bindings = subparsers.add_parser("set-bindings")
+    set_bindings.add_argument("--translation-binding", required=True)
+    set_bindings.add_argument("binding", nargs="*")
+    add_binding = subparsers.add_parser("add-binding")
+    add_binding.add_argument("binding")
+    remove_binding = subparsers.add_parser("remove-binding")
+    remove_binding.add_argument("binding")
+    subparsers.add_parser("hypr-bindings")
+    subparsers.add_parser("translate")
+    return parser.parse_args()
+
+
+def main() -> int:
+    args = parse_args()
+    try:
+        if args.action == "status":
+            status()
+        elif args.action == "configure":
+            if selected_model(args.model) is None:
+                raise RuntimeError("The selected model is not present in opencode.json")
+            save_voice_config(
+                {
+                    "model": args.model,
+                    "targetLanguage": args.target_language,
+                }
+            )
+            if args.binding:
+                bindings, _ = load_bindings()
+                save_bindings(bindings, args.binding)
+            status()
+        elif args.action == "bindings":
+            bindings, _ = load_bindings()
+            print("\n".join(bindings))
+        elif args.action == "set-bindings":
+            save_bindings(args.binding, args.translation_binding)
+            print("\n".join(load_bindings()[0]))
+        elif args.action == "add-binding":
+            bindings, translation_binding = load_bindings()
+            if args.binding not in bindings:
+                bindings.append(args.binding)
+            save_bindings(bindings, translation_binding)
+            print("\n".join(load_bindings()[0]))
+        elif args.action == "remove-binding":
+            bindings, translation_binding = load_bindings()
+            save_bindings(
+                [binding for binding in bindings if binding != args.binding],
+                translation_binding,
+            )
+            print("\n".join(load_bindings()[0]))
+        elif args.action == "hypr-bindings":
+            bindings, translation_binding = load_bindings()
+            for binding in bindings:
+                print(f"voice\t{binding}")
+            print(f"translation\t{translation_binding}")
+        elif args.action == "translate":
+            print(json.dumps({"text": translate(sys.stdin.read())}, ensure_ascii=False))
+    except RuntimeError as error:
+        print(json.dumps({"error": str(error)}, ensure_ascii=False), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

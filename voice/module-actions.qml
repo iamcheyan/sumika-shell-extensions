@@ -19,5 +19,10 @@ Item {
             type: "qml",
             call: function(p) { VoiceInput.cancel() }
         }, {description: "Cancel active voice input"})
+
+        ActionManager.register("voice.translate-toggle", "voice", "Toggle translated voice input", {
+            type: "qml",
+            call: function(p) { VoiceInput.toggleTranslation() }
+        }, {description: "Record Chinese speech, translate it online, and paste the result"})
     }
 }

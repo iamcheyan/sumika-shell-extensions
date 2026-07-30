@@ -18,9 +18,10 @@ Item {
     readonly property string voiceState: VoiceInput.state
     readonly property bool isRecording: voiceState === "recording"
     readonly property bool isTranscribing: voiceState === "transcribing"
+    readonly property bool isTranslating: voiceState === "translating"
     readonly property bool isSetup: voiceState === "setup"
     readonly property bool isError: voiceState === "error"
-    readonly property bool isActive: isRecording || isTranscribing || isSetup
+    readonly property bool isActive: isRecording || isTranscribing || isTranslating || isSetup
 
     readonly property color colorIdle: Appearance.colors.colBarText
     readonly property color colorRecording: "#F5C542"
@@ -30,13 +31,13 @@ Item {
     readonly property color iconColor: {
         if (root.isError) return root.colorError
         if (root.isRecording) return root.colorRecording
-        if (root.isTranscribing) return root.colorTranscribing
+        if (root.isTranscribing || root.isTranslating) return root.colorTranscribing
         if (root.isSetup) return root.colorRecording
         return root.colorIdle
     }
 
     readonly property string iconText: {
-        if (root.isTranscribing) return NerdIconMap.hourglass
+        if (root.isTranscribing || root.isTranslating) return NerdIconMap.hourglass
         if (root.isActive) return NerdIconMap.mic
         return NerdIconMap.mic
     }
@@ -82,7 +83,7 @@ Item {
         color: "transparent"
         border.width: 2
         border.color: root.isRecording ? root.colorRecording
-            : root.isTranscribing ? root.colorTranscribing
+            : root.isTranscribing || root.isTranslating ? root.colorTranscribing
             : root.colorRecording
         visible: root.isActive
         opacity: 0.75
@@ -94,7 +95,7 @@ Item {
             NumberAnimation { from: 1.65; to: 1.0; duration: 0 }
         }
         SequentialAnimation on opacity {
-            running: root.isRecording || root.isTranscribing
+            running: root.isRecording || root.isTranscribing || root.isTranslating
             loops: Animation.Infinite
             NumberAnimation { to: 0.8; duration: 600; easing.type: Easing.InOutQuad }
             NumberAnimation { to: 0.1; duration: 600; easing.type: Easing.InOutQuad }
@@ -104,7 +105,7 @@ Item {
     BarNerdIcon {
         id: icon
         anchors.centerIn: button
-        iconSize: root.isTranscribing
+        iconSize: root.isTranscribing || root.isTranslating
             ? Config.options.bar.rightIconSize * 0.72
             : Config.options.bar.rightIconSize
         text: root.iconText
@@ -140,7 +141,7 @@ Item {
     // Transcribing rotation animation
     SequentialAnimation {
         id: rotateAnim
-        running: root.isTranscribing
+        running: root.isTranscribing || root.isTranslating
         loops: Animation.Infinite
         NumberAnimation {
             target: icon

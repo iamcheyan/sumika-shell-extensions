@@ -20,8 +20,12 @@ PopupColumn {
     function stateLabel() {
         if (vi.state === "setup") return "Not Installed";
         if (vi.state === "idle") return "Ready";
-        if (vi.state === "recording") return "Recording";
+        if (vi.state === "recording")
+            return vi.activeMode === "translation"
+                ? `Recording · translate to ${vi.translationTargetLanguage}`
+                : "Recording";
         if (vi.state === "transcribing") return "Transcribing";
+        if (vi.state === "translating") return `Translating to ${vi.translationTargetLanguage}`;
         if (vi.state === "success") return "Transcription Success";
         if (vi.state === "error") return "Error";
         return vi.state;
@@ -29,7 +33,7 @@ PopupColumn {
     function tone() {
         if (vi.state === "idle" || vi.state === "success") return TuiStyle.success;
         if (vi.state === "recording" || vi.state === "error") return TuiStyle.danger;
-        if (vi.state === "transcribing" || vi.state === "setup") return TuiStyle.warning;
+        if (vi.state === "transcribing" || vi.state === "translating" || vi.state === "setup") return TuiStyle.warning;
         return TuiStyle.muted;
     }
 
@@ -138,6 +142,7 @@ PopupColumn {
                         text: {
                             if (vi.state === "recording") return `Recording ${vi.recordingDuration.toFixed(1)}s`;
                             if (vi.state === "transcribing") return "Transcribing…";
+                            if (vi.state === "translating") return `Translating to ${vi.translationTargetLanguage}…`;
                             if (vi.state === "success") return "Transcription ready";
                             if (vi.state === "error") return "Error";
                             return "Tap mic to test 3s";

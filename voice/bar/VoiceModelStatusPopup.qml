@@ -288,7 +288,7 @@ ManagedPopupWindow {
                     Layout.alignment: Qt.AlignVCenter
                 }
                 StyledText {
-                    text: "Edit Hotkeys"
+                    text: "Edit Configuration File"
                     color: TuiStyle.fg
                     font.pixelSize: 13
                     Layout.fillWidth: true
@@ -299,7 +299,7 @@ ManagedPopupWindow {
             onClicked: {
                 root.close();
                 Quickshell.execDetached(["bash", "-c",
-                    `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/sumika-edit-voice-bindings"`]);
+                    `"${FileUtils.trimFileProtocol(Qt.resolvedUrl(".."))}/bin/sumika-edit-voice-config"`]);
             }
         }
     }

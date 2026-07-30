@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+config_home="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sumika-shell}"
+config_file="$config_home/voice/config.json"
+helper="$(dirname "${BASH_SOURCE[0]}")/sumika-voice-translate"
+
+mkdir -p "$(dirname "$config_file")"
+if [[ ! -f "$config_file" ]]; then
+  "$helper" set-bindings --translation-binding HANGUL "ALT + A" "code:472" >/dev/null
+fi
+
+exec xdg-terminal-exec \
+  --app-id=io.github.iamcheyan.sumika.editvoiceconfig \
+  "${EDITOR:-vi}" "$config_file"
