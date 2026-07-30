@@ -512,7 +512,7 @@ def render_right(model, w):
                 "text" if item.get("enabled", False) else "muted"
             )
             lines.append((tag, S.truncate(
-                f"{pointer} {item.get('label', item.get('value', ''))}{suffix}",
+                f"{pointer} {item.get('value', item.get('label', ''))}{suffix}",
                 max(8, w - 2),
             )))
         return lines
