@@ -20,17 +20,26 @@ import os
 import sys
 import time
 
-# Point SUMIKA_SHELL_ROOT at this extension's root so the shared TUI framework's
-# run_cmd resolves scripts in our own bin/ directory.
+# Resolve the extension root for extension-local file access.
 _EXT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if os.path.isfile(os.path.join(_EXT_ROOT, "module.json")):
-    os.environ["SUMIKA_SHELL_ROOT"] = _EXT_ROOT
+if not os.path.isfile(os.path.join(_EXT_ROOT, "module.json")):
+    _EXT_ROOT = None
 
+# Add repo bin to path for shared TUI framework.
+# SUMIKA_SHELL_ROOT is set by the session wrapper; fall back to repo-relative.
 _omd_bin = os.path.join(
-    os.environ.get("SUMIKA_SHELL_ROOT") or os.path.expanduser("~/.config/sumika-shell"), "bin")
+    os.environ.get("SUMIKA_SHELL_ROOT") or os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "bin")
 if _omd_bin not in sys.path:
     sys.path.insert(0, _omd_bin)
+
+# Shared TUI framework lives in the repo bin/.
 import sumika_tui_framework as S
+
+# Make extension scripts callable by name via run_cmd without full path.
+ext_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)))
+if ext_bin not in sys.path:
+    sys.path.insert(0, ext_bin)
 
 # ── keyboard layout for visual key picker ────────────────────────────────
 KEYBOARD_ROWS = [

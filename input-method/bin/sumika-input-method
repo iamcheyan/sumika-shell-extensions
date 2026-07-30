@@ -17,6 +17,8 @@ import time
 
 
 FCITX_SERVICE = "org.fcitx.Fcitx5"
+FCITX_CONTROLLER_PATH = "/controller"
+FCITX_CONTROLLER_INTERFACE = "org.fcitx.Fcitx.Controller1"
 RIME_PATH = "/rime"
 RIME_INTERFACE = "org.fcitx.Fcitx.Rime1"
 
@@ -90,6 +92,22 @@ def rime_call(method, *arguments):
         RIME_PATH,
         "--method",
         f"{RIME_INTERFACE}.{method}",
+    ]
+    command.extend(arguments)
+    return run(command)
+
+
+def controller_call(method, *arguments):
+    command = [
+        "gdbus",
+        "call",
+        "--session",
+        "--dest",
+        FCITX_SERVICE,
+        "--object-path",
+        FCITX_CONTROLLER_PATH,
+        "--method",
+        f"{FCITX_CONTROLLER_INTERFACE}.{method}",
     ]
     command.extend(arguments)
     return run(command)
@@ -186,13 +204,38 @@ def set_schema(schema):
     raise RuntimeError(last_error)
 
 
+def deploy_rime():
+    """Ask the running Fcitx Rime addon to redeploy its user data.
+
+    Rime publishes its own deployment start/result notifications through
+    Fcitx's notification addon, which Sumika's notification server receives.
+    """
+    if not shutil.which("gdbus"):
+        raise RuntimeError("gdbus is required")
+    if not current_input_method():
+        raise RuntimeError("Fcitx5 is not running")
+
+    # Rime implements the addon sub-config path "deploy". The payload is
+    # intentionally empty: this endpoint treats the path itself as the action.
+    result = controller_call(
+        "SetConfig",
+        "fcitx://config/addon/rime/deploy",
+        "<@a{sv} {}>",
+    )
+    if result.returncode != 0:
+        raise RuntimeError(result.stderr.strip() or "Unable to start Rime deployment")
+
+
 def print_schemas():
     backend, schemas = load_schemas()
     print(json.dumps({"backend": backend, "schemas": schemas}, ensure_ascii=False))
 
 
 def usage():
-    print("usage: sumika-input-method status | set <schema> | schemas | config", file=sys.stderr)
+    print(
+        "usage: sumika-input-method status | set <schema> | deploy | schemas | config",
+        file=sys.stderr,
+    )
 
 
 def main():
@@ -206,6 +249,8 @@ def main():
             status()
         elif action == "set" and len(sys.argv) == 3:
             set_schema(sys.argv[2])
+        elif action == "deploy" and len(sys.argv) == 2:
+            deploy_rime()
         elif action == "schemas":
             print_schemas()
         elif action == "config":

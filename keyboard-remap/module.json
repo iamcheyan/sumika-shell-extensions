@@ -16,6 +16,15 @@
         "icon": "icon.png",
         "categories": ["Settings", "HardwareSettings"],
         "startupWmClass": "io.github.iamcheyan.sumika.keyboardtui"
+      },
+      {
+        "id": "sumika-keytest",
+        "name": "Sumika KeyTest",
+        "comment": "Inspect XKB, evdev and keyd codes for every keyboard key",
+        "exec": "sumika-settings-keyboard key-test",
+        "icon": "icon.png",
+        "categories": ["Settings", "HardwareSettings"],
+        "startupWmClass": "io.github.iamcheyan.sumika.keytest"
       }
     ],
     "popupSections": [

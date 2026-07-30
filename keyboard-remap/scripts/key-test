@@ -1061,7 +1061,10 @@ class KeyTestWindow(Gtk.ApplicationWindow):
 
 class KeyTestApp(Adw.Application):
     def __init__(self, initial_mode="current", mode_locked=False):
-        super().__init__(application_id="org.omarchy.key-test", flags=Gio.ApplicationFlags.NON_UNIQUE)
+        super().__init__(
+            application_id="io.github.iamcheyan.sumika.keytest",
+            flags=Gio.ApplicationFlags.NON_UNIQUE,
+        )
         self.initial_mode = initial_mode
         self.mode_locked = mode_locked
 

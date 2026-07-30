@@ -15,12 +15,14 @@ Singleton {
 
     property bool available: false
     property bool busy: false
+    property bool deploying: false
     property string inputMethod: ""
     property string schema: ""
     property string language: "unknown"
     property string displayName: "Input method"
     property string variant: ""
     property string lastError: ""
+    property string lastErrorTitle: "Unable to switch input language"
     property string pendingSchema: ""
     property string activeSwitchSchema: ""
     property string queuedSchema: ""
@@ -61,6 +63,7 @@ Singleton {
         }
         root.busy = true;
         root.lastError = "";
+        root.lastErrorTitle = "Unable to switch input language";
         root.activeSwitchSchema = schemaId;
 
         // Rime's D-Bus service operates on Fcitx's most recent input context.
@@ -85,6 +88,16 @@ Singleton {
 
     function openConfiguration() {
         Quickshell.execDetached([root.helper, "config"]);
+    }
+
+    function redeployRime() {
+        if (!root.available || root.busy || root.deploying)
+            return;
+        root.deploying = true;
+        root.lastError = "";
+        root.lastErrorTitle = "Unable to redeploy Rime";
+        deployProcess.command = [root.helper, "deploy"];
+        deployProcess.running = true;
     }
 
     function applyStatus(text) {
@@ -144,6 +157,25 @@ Singleton {
                     root.pendingSchema = "";
                 }
             }
+        }
+    }
+
+    Process {
+        id: deployProcess
+
+        stderr: StdioCollector {
+            onStreamFinished: {
+                const message = text.trim();
+                if (message.length > 0)
+                    root.lastError = message;
+            }
+        }
+
+        onExited: (exitCode, exitStatus) => {
+            root.deploying = false;
+            if (exitCode !== 0 && root.lastError.length === 0)
+                root.lastError = `Rime deployment request failed (${exitCode})`;
+            refreshTimer.restart();
         }
     }
 

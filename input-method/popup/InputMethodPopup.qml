@@ -31,6 +31,10 @@ PopupColumn {
         subtitle: im.available ? im.summary : "Fcitx5 is unavailable"
         tone: im.available ? TuiStyle.accent : TuiStyle.danger
         showDivider: true
+        leadingActionIcon: im.deploying ? "progress_activity" : "refresh"
+        leadingActionTooltip: im.deploying ? "正在重新部署 Rime" : "重新部署 Rime"
+        leadingActionEnabled: im.available && !im.busy && !im.deploying
+        onLeadingActionClicked: im.redeployRime()
         actionIcon: "settings"
         actionTooltip: "输入法设置"
         onActionClicked: {
@@ -130,7 +134,7 @@ PopupColumn {
         Layout.topMargin: 8
         Layout.bottomMargin: 8
         visible: im.lastError.length > 0
-        text: "Unable to switch input language"
+        text: im.lastErrorTitle
         color: TuiStyle.danger
         font.family: Appearance.font.family.main
         font.pixelSize: Appearance.font.pixelSize.small

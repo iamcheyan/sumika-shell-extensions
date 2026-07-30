@@ -38,7 +38,7 @@ case "${1:-status}" in
     "${SUMIKA_SHELL_ROOT}/bin/omarchy-keyboard-apply" < /dev/null
     ;;
   key-test)
-    "${SUMIKA_SHELL_ROOT}/scripts/key-test-launcher" < /dev/null
+    "${SCRIPT_DIR}/../scripts/key-test-launcher" < /dev/null
     ;;
   fnmode-status)
     "${SUMIKA_SHELL_ROOT}/bin/sumika-keyboard-function-row" status
