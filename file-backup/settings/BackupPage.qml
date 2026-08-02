@@ -22,7 +22,7 @@ PageBody {
                 iconName: "cloud_upload"
                 onClicked: {
                     if (settingsRoot) settingsRoot.dismiss();
-                    Quickshell.execDetached(["sumika-launch-settings-backup-tui"]);
+                    Quickshell.execDetached(["musubi"]);
                 }
             }
         }

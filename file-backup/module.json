@@ -11,12 +11,12 @@
     "launchers": [
       {
         "id": "sumika-file-backup",
-        "name": "Sumika File Backup",
+        "name": "Musubi File Backup",
         "comment": "Configure and manage SMB file backups and sync",
-        "exec": "sumika-launch-settings-backup-tui",
+        "exec": "musubi",
         "icon": "icon.png",
         "categories": ["System", "FileTools"],
-        "startupWmClass": "io.github.iamcheyan.sumika.backuptui"
+        "startupWmClass": "io.github.iamcheyan.musubi"
       }
     ],
     "services": [],

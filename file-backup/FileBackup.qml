@@ -56,7 +56,7 @@ Singleton {
 
     function openSettings() {
         // Open the settings page via Quickshell's settings navigation
-        Quickshell.execDetached([`${root.shareDir}/sumika-launch-settings-backup-tui`]);
+        Quickshell.execDetached(["musubi"]);
     }
 
     function refreshStatus() {
