@@ -229,7 +229,7 @@ fast_capture() {
     fi
 
     tmp_file="$(mktemp /tmp/sumika-screenshot.XXXXXX.png)"
-    trap 'rm -f "$fast_pid_file" "$tmp_file"; unfreeze_bar' EXIT INT TERM
+    trap 'restore_cursor; rm -f "$fast_pid_file" "$tmp_file"; unfreeze_bar' EXIT INT TERM
     hide_cursor
     grim -g "$geometry" "$tmp_file"
     restore_cursor
@@ -365,12 +365,15 @@ launch_direct() {
         snapshot_ts="$(date +%s%3N)"
         if [ -n "$target_monitor" ]; then
             snap_path="${snapshot_dir}/snapshot-${target_monitor}-${snapshot_ts}.png"
+            _snap_trap=1
+            trap 'restore_cursor; _snap_trap=0' INT TERM
             hide_cursor
             if grim -o "$target_monitor" "$snap_path" > /dev/null 2>&1; then
                 mon_env="$(printf '%s' "$target_monitor" | sed 's/[-.]/_/g')"
                 export "SUMIKA_SNAPSHOT_PATH_${mon_env}=${snap_path}"
             fi
             restore_cursor
+            [ "$_snap_trap" -eq 0 ] || trap - INT TERM
         fi
     fi
 

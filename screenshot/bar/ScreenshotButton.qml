@@ -19,7 +19,7 @@ Item {
         interval: 1500
         repeat: true
         running: GlobalStates.screenshotActive
-        onTriggered: recordCheckProc.running = true
+        id: recordPollTimer
         // The selector closes as soon as Stop is pressed, which disables this
         // timer before another poll can clear the old value.
         onRunningChanged: {
@@ -33,7 +33,13 @@ Item {
             "pidfile=\"${XDG_RUNTIME_DIR:-/tmp}/sumika-record.pid\"; " +
             "[ -f \"$pidfile\" ] && kill -0 \"$(cat \"$pidfile\")\" 2>/dev/null && echo yes || echo no"]
         stdout: SplitParser {
-            onRead: line => root.recordingActive = (line.trim() === "yes")
+            onRead: line => {
+                // Ignore stale results delivered after the timer stopped
+                // (recorder finalizing between selector exit and next session).
+                if (!recordPollTimer.running)
+                    return;
+                root.recordingActive = (line.trim() === "yes")
+            }
         }
     }
 

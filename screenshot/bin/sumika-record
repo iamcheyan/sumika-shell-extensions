@@ -87,6 +87,19 @@ process_is_alive() {
     return 0
 }
 
+# Verify a PID is one of our recorder backends (not a recycled process that
+# happens to own a stale pidfile). /proc/PID/exe is stable across PID reuse.
+is_recorder_pid() {
+    _p="$1"
+    [ -n "$_p" ] || return 1
+    kill -0 "$_p" 2>/dev/null || return 1
+    _exe="$(readlink "/proc/$_p/exe" 2>/dev/null || true)"
+    case "$_exe" in
+        */wf-recorder|*/gpu-screen-recorder) return 0 ;;
+    esac
+    return 1
+}
+
 is_recording() {
     if [ -f "$pid_file" ]; then
         _pid="$(cat "$pid_file" 2>/dev/null || true)"
@@ -142,18 +155,25 @@ stop_recording() {
 
     if [ -f "$pid_file" ]; then
         _pid="$(cat "$pid_file" 2>/dev/null || true)"
-        if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+        if is_recorder_pid "$_pid"; then
             kill -INT "$_pid" 2>/dev/null || true
         fi
+        # Remove the pidfile immediately so the --stop-with-parent watcher
+        # cannot send a second SIGINT mid-finalize if the selector exits
+        # while the recorder is still writing its MP4 trailer.
+        rm -f "$pid_file"
+        # SIGINT tells the backend to finish encoding and write the container
+        # trailer. This may take longer than five seconds for a large/high-res
+        # recording, so wait on the PID directly for the clean exit instead
+        # of force-killing it.
+        if [ -n "$_pid" ]; then
+            while process_is_alive "$_pid"; do
+                sleep 0.1
+            done
+        fi
     fi
-    # SIGINT tells the backend to finish encoding and write the container
-    # trailer. This may take longer than five seconds for a large/high-res
-    # recording, so wait for the clean exit instead of force-killing it.
-    while is_recording; do
-        sleep 0.1
-    done
 
-    rm -f "$pid_file" "$out_file"
+    rm -f "$out_file"
     if [ -n "$_out" ] && [ -f "$_out" ]; then
         notify normal "Recording saved" "$_out"
         printf '%s\n' "$_out"
@@ -242,7 +262,7 @@ start_recording() {
     printf '%s\n' "$_path" >"$out_file"
 
     sleep 0.35
-    if ! kill -0 "$_pid" 2>/dev/null; then
+    if ! process_is_alive "$_pid" 2>/dev/null; then
         rm -f "$pid_file" "$out_file"
         notify critical "Screen recording failed" \
             "Backend exited immediately. See $log_file"
