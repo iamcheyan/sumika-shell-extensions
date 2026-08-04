@@ -1,0 +1,282 @@
+#!/bin/sh
+# sumika-record — start/stop screen recording with clear feedback.
+#
+# Usage:
+#   sumika-record                         # slurp region, then record (CLI)
+#   sumika-record --fullscreen            # focused monitor
+#   sumika-record --region "X,Y WxH"      # start with given geometry (from QML)
+#   sumika-record --sound                 # include desktop audio when possible
+#   sumika-record --stop                  # stop; prints output path on stdout
+#   sumika-record --quiet                 # less notify-send (UI owns the feedback)
+#
+# Backend: wf-recorder (preferred) or gpu-screen-recorder.
+
+set -eu
+
+runtime_dir="${XDG_RUNTIME_DIR:-/tmp}"
+pid_file="$runtime_dir/sumika-record.pid"
+out_file="$runtime_dir/sumika-record.out"
+log_file="${SUMIKA_RECORD_LOG:-/tmp/sumika-record.log}"
+
+fullscreen=0
+with_sound=0
+stop_only=0
+quiet=0
+region_geom=""
+stop_with_parent=0
+
+for arg in "$@"; do
+    case "$arg" in
+        --fullscreen|-f) fullscreen=1 ;;
+        --sound|-a|--with-desktop-audio) with_sound=1 ;;
+        --stop) stop_only=1 ;;
+        --stop-with-parent) stop_with_parent=1 ;;
+        --quiet|-q) quiet=1 ;;
+        --region=*) region_geom="${arg#--region=}" ;;
+        --region)
+            # Value arrives as the next argv; resolved in the second pass below.
+            ;;
+        -h|--help)
+            sed -n '2,14p' "$0" | sed 's/^# \?//'
+            exit 0
+            ;;
+        --region\ *)
+            ;;
+    esac
+done
+
+# Parse --region value when passed as separate argv: --region "X,Y WxH"
+prev=""
+for arg in "$@"; do
+    if [ "$prev" = "--region" ]; then
+        region_geom="$arg"
+    fi
+    prev="$arg"
+done
+
+notify() {
+    [ "$quiet" -eq 1 ] && return 0
+    notify-send -u "${1:-normal}" -i media-record -a "Sumika Record" "$2" "$3" 2>/dev/null || true
+}
+
+videos_dir() {
+    _cfg="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sumika-shell}/sumika.json"
+    if command -v jq >/dev/null 2>&1 && [ -r "$_cfg" ]; then
+        _p="$(jq -r '.screenRecord.savePath // empty' "$_cfg" 2>/dev/null || true)"
+        if [ -n "$_p" ] && [ "$_p" != "null" ]; then
+            printf '%s\n' "$_p"
+            return 0
+        fi
+    fi
+    if [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs" ]; then
+        # shellcheck disable=SC1090
+        . "${XDG_CONFIG_HOME:-$HOME/.config}/user-dirs.dirs"
+    fi
+    printf '%s\n' "${XDG_VIDEOS_DIR:-$HOME/Videos}"
+}
+
+process_is_alive() {
+    _process_pid="$1"
+    kill -0 "$_process_pid" 2>/dev/null || return 1
+    # kill -0 also succeeds for a zombie. Treat it as exited, otherwise the
+    # stop path can wait forever even though the recorder already wrote file.
+    _process_state="$(ps -o stat= -p "$_process_pid" 2>/dev/null | tr -d ' ' || true)"
+    case "$_process_state" in
+        Z*) return 1 ;;
+    esac
+    return 0
+}
+
+is_recording() {
+    if [ -f "$pid_file" ]; then
+        _pid="$(cat "$pid_file" 2>/dev/null || true)"
+        if [ -n "$_pid" ] && process_is_alive "$_pid"; then
+            return 0
+        fi
+    fi
+    return 1
+}
+
+stop_when_parent_exits() {
+    _parent_pid="$1"
+    _recorder_pid="$2"
+    (
+        while process_is_alive "$_parent_pid"; do
+            sleep 1
+        done
+        if [ -f "$pid_file" ] && [ "$(cat "$pid_file" 2>/dev/null || true)" = "$_recorder_pid" ]; then
+            kill -INT "$_recorder_pid" 2>/dev/null || true
+            # wf-recorder writes the MP4 trailer on SIGINT. Do not impose a
+            # short timeout here: killing it while it is finalising leaves a
+            # file without its index and makes it appear as if no video exists.
+            while process_is_alive "$_recorder_pid"; do
+                sleep 0.1
+            done
+            rm -f "$pid_file" "$out_file"
+        fi
+    ) >/dev/null 2>&1 &
+}
+
+backend() {
+    if command -v wf-recorder >/dev/null 2>&1; then
+        printf 'wf-recorder\n'
+        return 0
+    fi
+    if command -v gpu-screen-recorder >/dev/null 2>&1; then
+        printf 'gpu-screen-recorder\n'
+        return 0
+    fi
+    return 1
+}
+
+focused_monitor() {
+    command -v hyprctl >/dev/null 2>&1 || return 0
+    hyprctl monitors -j 2>/dev/null \
+        | jq -r '.[] | select(.focused) | .name' 2>/dev/null \
+        | head -n 1
+}
+
+stop_recording() {
+    _out=""
+    [ -f "$out_file" ] && _out="$(cat "$out_file" 2>/dev/null || true)"
+
+    if [ -f "$pid_file" ]; then
+        _pid="$(cat "$pid_file" 2>/dev/null || true)"
+        if [ -n "$_pid" ] && kill -0 "$_pid" 2>/dev/null; then
+            kill -INT "$_pid" 2>/dev/null || true
+        fi
+    fi
+    # SIGINT tells the backend to finish encoding and write the container
+    # trailer. This may take longer than five seconds for a large/high-res
+    # recording, so wait for the clean exit instead of force-killing it.
+    while is_recording; do
+        sleep 0.1
+    done
+
+    rm -f "$pid_file" "$out_file"
+    if [ -n "$_out" ] && [ -f "$_out" ]; then
+        notify normal "Recording saved" "$_out"
+        printf '%s\n' "$_out"
+        return 0
+    fi
+    notify normal "Recording stopped" "No output file was found."
+    return 1
+}
+
+start_recording() {
+    if ! _be="$(backend)"; then
+        notify critical "Screen recording unavailable" \
+            "Install a backend, e.g.:  sudo dnf install wf-recorder"
+        exit 1
+    fi
+
+    _dir="$(videos_dir)"
+    mkdir -p "$_dir"
+    _stamp="$(date '+%Y-%m-%d_%H.%M.%S')"
+    _path="$_dir/screenrecord-${_stamp}.mp4"
+
+    _geom="$region_geom"
+    _monitor=""
+
+    if [ -n "$_geom" ]; then
+        : # geometry from QML / CLI
+    elif [ "$fullscreen" -eq 1 ]; then
+        _monitor="$(focused_monitor)"
+        if [ -z "$_monitor" ]; then
+            notify critical "Screen recording" "Could not resolve the focused monitor."
+            exit 1
+        fi
+    else
+        if ! command -v slurp >/dev/null 2>&1; then
+            notify critical "Screen recording" "slurp is required to pick a region."
+            exit 1
+        fi
+        notify low "Screen recording" "Select a region (Esc to cancel)"
+        _geom="$(slurp -d -b '#00000066' -c '#f4f4f4ff' -s '#ffffff22' -w 2 2>/dev/null || true)"
+        if [ -z "$_geom" ]; then
+            notify normal "Screen recording" "Cancelled"
+            exit 0
+        fi
+    fi
+
+    case "$_be" in
+        wf-recorder)
+            set -- wf-recorder -f "$_path"
+            if [ -n "$_geom" ]; then
+                set -- "$@" -g "$_geom"
+            elif [ -n "$_monitor" ]; then
+                set -- "$@" -o "$_monitor"
+            fi
+            if [ "$with_sound" -eq 1 ]; then
+                set -- "$@" -a
+            fi
+            ;;
+        gpu-screen-recorder)
+            set -- gpu-screen-recorder -k auto -f 60 -fm cfr -fallback-cpu-encoding yes -o "$_path"
+            if [ -n "$_geom" ]; then
+                _x="${_geom%%,*}"
+                _rest="${_geom#*,}"
+                _y="${_rest%% *}"
+                _wh="${_rest#* }"
+                _w="${_wh%%x*}"
+                _h="${_wh#*x}"
+                set -- "$@" -w "${_w}x${_h}+${_x}+${_y}"
+            elif [ -n "$_monitor" ]; then
+                set -- "$@" -w "$_monitor"
+            fi
+            if [ "$with_sound" -eq 1 ]; then
+                set -- "$@" -a default_output -ac aac
+            fi
+            ;;
+    esac
+
+    # An asynchronous POSIX shell job may inherit SIGINT=ignored. Restore the
+    # default before exec so the explicit Stop action can let wf-recorder exit
+    # cleanly and finish writing its MP4 trailer.
+    (
+        trap - INT
+        exec "$@"
+    ) >>"$log_file" 2>&1 &
+    _pid=$!
+    printf '%s\n' "$_pid" >"$pid_file"
+    printf '%s\n' "$_path" >"$out_file"
+
+    sleep 0.35
+    if ! kill -0 "$_pid" 2>/dev/null; then
+        rm -f "$pid_file" "$out_file"
+        notify critical "Screen recording failed" \
+            "Backend exited immediately. See $log_file"
+        exit 1
+    fi
+
+    # A Quickshell reload terminates its selector process. Watch that process
+    # rather than tying recorder lifetime to QML component destruction, which
+    # also happens for ordinary UI interactions.
+    if [ "$stop_with_parent" -eq 1 ]; then
+        stop_when_parent_exits "$PPID" "$_pid"
+    fi
+
+    # Always print path for callers (QML reads stdout).
+    printf '%s\n' "$_path"
+    if [ "$with_sound" -eq 1 ]; then
+        notify normal "Recording…" "$_path  ·  audio on"
+    else
+        notify normal "Recording…" "$_path"
+    fi
+}
+
+if [ "$stop_only" -eq 1 ]; then
+    if is_recording; then
+        stop_recording
+        exit $?
+    fi
+    notify normal "Screen recording" "Nothing is recording."
+    exit 0
+fi
+
+if is_recording; then
+    notify normal "Screen recording" "A recording is already in progress. Use its Stop button to finish it."
+    exit 1
+fi
+
+start_recording
