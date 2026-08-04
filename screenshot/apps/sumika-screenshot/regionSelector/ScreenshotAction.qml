@@ -32,6 +32,21 @@ Singleton {
         return `'${StringUtils.shellSingleQuoteEscape(value)}'`;
     }
 
+    // Shared grim pre/post: hide the software cursor via cursor.invisible.
+    // Do NOT warp the pointer off-screen — Hyprland clamps that to (0,0) and
+    // the arrow ends up in the top-left of every capture.
+    function grimHideCursorPrelude() {
+        return ` _prev_invis=$(hyprctl getoption cursor:invisible -j 2>/dev/null | jq -r '.bool // false' 2>/dev/null || echo false); ` +
+            `hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true; ` +
+            `sleep 0.03; `;
+    }
+
+    function grimRestoreCursorEpilogue() {
+        return ` if [ "\${_prev_invis:-false}" = "true" ]; then ` +
+            `hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true; ` +
+            `else hyprctl eval "hl.config({ cursor = { invisible = false } })" >/dev/null 2>&1 || true; fi; `;
+    }
+
     function regionString(x, y, width, height) {
         const rx = Math.round(x);
         const ry = Math.round(y);
@@ -61,7 +76,11 @@ Singleton {
 
     function getTempCaptureCommand(x, y, width, height, tempPath) {
         const region = regionString(x, y, width, height);
-        return ["bash", "-c", `grim -g ${quote(region)} ${quote(tempPath)}`];
+        return ["bash", "-c",
+            grimHideCursorPrelude() +
+            `grim -g ${quote(region)} ${quote(tempPath)}; ` +
+            grimRestoreCursorEpilogue()
+        ];
     }
 
     function getSnapshotCropCommand(x, y, width, height, snapshotPath, tempPath) {
@@ -71,6 +90,30 @@ Singleton {
         const rh = Math.round(height);
         return ["bash", "-c",
             `magick ${quote(snapshotPath)} -crop ${rw}x${rh}+${rx}+${ry} +repage ${quote(tempPath)}`
+        ];
+    }
+
+    // Pixelate (mosaic) a rectangle on the frozen snapshot in-place.
+    // Coords are in snapshot pixel space (already scale-adjusted).
+    // Uses scale-down + nearest-neighbor scale-up — cheap and very readable
+    // as a redaction effect compared to a soft Gaussian blur.
+    function getMosaicCommand(x, y, width, height, imagePath) {
+        const rx = Math.round(x);
+        const ry = Math.round(y);
+        const rw = Math.max(1, Math.round(width));
+        const rh = Math.max(1, Math.round(height));
+        // ~12px blocks: stronger mosaic on larger regions, still legible cells.
+        const block = 12;
+        const smallW = Math.max(1, Math.round(rw / block));
+        const smallH = Math.max(1, Math.round(rh / block));
+        return ["bash", "-c",
+            `img=${quote(imagePath)}; ` +
+            `tmp=$(mktemp "/tmp/sumika-mosaic.XXXXXX.png"); ` +
+            `magick "$img" ` +
+            `\\( +clone -crop ${rw}x${rh}+${rx}+${ry} +repage ` +
+            `-sample ${smallW}x${smallH}! -sample ${rw}x${rh}! \\) ` +
+            `-geometry +${rx}+${ry} -compose over -composite "$tmp" && ` +
+            `mv -f "$tmp" "$img"`
         ];
     }
 
@@ -87,7 +130,10 @@ Singleton {
             default: {
                 const command = `tmpFile=$(mktemp /tmp/${tempPrefix}.XXXXXX.png) && ` +
                     `trap 'rm -f "$tmpFile"' EXIT && ` +
-                    `grim -g ${regionArg} "$tmpFile" && ` +
+                    grimHideCursorPrelude() +
+                    `grim -g ${regionArg} "$tmpFile"; _grim_ec=$?; ` +
+                    grimRestoreCursorEpilogue() +
+                    ` [ "$_grim_ec" -eq 0 ] || exit "$_grim_ec"; ` +
                     tempFileActionScript("$tmpFile", action, saveDir, false);
                 return ["bash", "-c", command];
             }

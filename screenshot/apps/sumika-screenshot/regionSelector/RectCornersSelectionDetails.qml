@@ -14,6 +14,9 @@ Item {
     required property color overlayColor
     property bool showAimLines: Config.options.regionSelector.rect.showAimLines
     property bool captureReady: true
+    // Regular screenshot selection draws its mask in RegionSelection so the
+    // visual layer is independent of the MouseArea input routing.
+    property bool showOutsideOverlay: true
 
     property bool breathingBorderOnly: false
 
@@ -21,7 +24,10 @@ Item {
     readonly property real safeY: Math.max(0, Math.min(root.regionY, root.height))
     readonly property real safeRight: Math.max(root.safeX, Math.min(root.regionX + root.regionWidth, root.width))
     readonly property real safeBottom: Math.max(root.safeY, Math.min(root.regionY + root.regionHeight, root.height))
-    readonly property bool showOverlay: root.captureReady && !root.breathingBorderOnly
+    // Overlay stays visible during recording too — the dark mask only covers
+    // the area outside the selection, which wf-recorder never captures (-g
+    // records the selection interior only), so it never appears in the video.
+    readonly property bool showOverlay: root.captureReady && root.showOutsideOverlay
 
     // Four simple rectangles avoid the full-screen-width border previously
     // rebuilt for every pointer movement.
@@ -65,6 +71,9 @@ Item {
     DashedBorder {
         id: selectionBorder
         z: 9
+        // During recording the chrome draws its own red frame; hide the dashed
+        // selection border so the two don't overlap.
+        visible: !root.breathingBorderOnly
         anchors {
             left: parent.left
             top: parent.top
