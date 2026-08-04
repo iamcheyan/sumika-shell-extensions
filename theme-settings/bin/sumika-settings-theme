@@ -198,7 +198,7 @@ EOF
     c15_s="$(hex_strip "$c15")"
 
     cat >"$dir/foot.ini" <<EOF
-[colors]
+[colors-dark]
 background=${bg_s}
 foreground=${fg_s}
 regular0=${c0_s}
