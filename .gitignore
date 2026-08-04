@@ -1,3 +1,6 @@
+# Embedded repositories (developed standalone, never merged into this repo)
+sasayaki/
+
 # Model files downloaded at runtime
 *.onnx
 models/
