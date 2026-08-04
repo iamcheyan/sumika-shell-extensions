@@ -274,8 +274,6 @@ PanelWindow {
     property bool recordingActive: false
     property int recordingElapsedSec: 0
     property string recordingOutputPath: ""
-    // True after the recorder stops, while the save/open chrome is shown.
-    property bool recordingStopped: false
     // One uninterrupted visual state after the user finishes drawing: the
     // same outside-selection dim is present through countdown, startup, and
     // recording.
@@ -286,7 +284,7 @@ PanelWindow {
         return `${m}:${s.toString().padStart(2, "0")}`;
     }
     readonly property bool recordingUi: root.isRecording
-        && (root.recordingSession || root.recordingStopped)
+        && root.recordingSession
 
     Process {
         id: checkRecordingProc
@@ -532,28 +530,6 @@ PanelWindow {
         }
     }
 
-    Process {
-        id: recordStopProc
-        running: false
-        command: ["sumika-record", "--stop"]
-        stdout: StdioCollector {
-            id: recordStopStdout
-            waitForEnd: true
-            onStreamFinished: {
-                const path = (text || "").trim().split("\n").filter(l => l.length > 0).pop() || "";
-                if (path !== "")
-                    root.recordingOutputPath = path;
-            }
-        }
-        onExited: (exitCode, exitStatus) => {
-            root.recordingSession = false;
-            root.recordingActive = false;
-            root.recordingStopped = true;
-            recordElapsedTimer.stop();
-            // Do NOT dismiss: the recordingChrome shows save/open buttons
-            // so the user can confirm where the file landed.
-        }
-    }
 
     function beginRecordCountdown() {
         // Set this before changing any per-phase state so the visual mask
@@ -561,7 +537,6 @@ PanelWindow {
         root.recordingSession = true;
         root.recordCountdown = 3;
         root.recordingActive = false;
-        root.recordingStopped = false;
         root.recordingElapsedSec = 0;
         root.recordingOutputPath = "";
         recordCountdownTimer.restart();
@@ -590,11 +565,11 @@ PanelWindow {
             return;
         }
         recordElapsedTimer.stop();
-        // Stop the recorder but keep the overlay up: recordStopProc.onExited
-        // flips recordingStopped=true so the chrome shows the save/open/
-        // discard controls. The script waits for the MP4 trailer, then
-        // prints the final output path to stdout (captured below).
-        recordStopProc.running = true;
+        // Stop the recorder and close immediately. sumika-record --stop waits
+        // for the MP4 trailer to be written, saves to ~/Videos, and fires the
+        // completion notification with the output path — no UI needed.
+        Quickshell.execDetached(["sumika-record", "--stop"]);
+        root.dismiss();
     }
 
     Process {
@@ -803,8 +778,6 @@ PanelWindow {
                 return mouseArea;
             if (root.recordingActive)
                 return stopRecMouse;
-            if (root.recordingStopped)
-                return stoppedControls;
             if (root.recordingSession)
                 return noRecordingInput;
             return actionBarMask;
@@ -1553,12 +1526,11 @@ PanelWindow {
         }
     }
 
-    // Recording chrome is visual-only except for its compact control bars, so
+    // Recording chrome is visual-only except for its compact control bar, so
     // the recorded application stays interactive. The video never captures a
-    // full-screen overlay. Three states share this surface:
+    // full-screen overlay. Two states share this surface:
     //   1. countdown (recordCountdown 3/2/1) — big number + hint
-    //   2. recording (recordingActive) — timer + stop button
-    //   3. stopped (recordingStopped) — save / open / discard buttons
+    //   2. recording (recordingActive) — red frame, timer + stop button
     Item {
         id: recordingChrome
         anchors.fill: parent
@@ -1639,9 +1611,45 @@ PanelWindow {
             }
         }
 
-        // No border is drawn around the capture rectangle: compositor scaling
-        // can place a border's pixels inside the captured geometry.
-        // ── Recording timer + stop bar (state 2): above the selection ──
+        // Red frame + pulsing corner dots around the capture rectangle.
+        // The Rectangle sits 3px OUTSIDE the selection so its border pixels
+        // are never inside the wf-recorder -g region and never recorded.
+        Rectangle {
+            visible: root.recordingActive && root.regionWidth > 0 && root.regionHeight > 0
+            x: root.regionX - 3
+            y: root.regionY - 3
+            width: root.regionWidth + 6
+            height: root.regionHeight + 6
+            color: "transparent"
+            border.color: "#e53935"
+            border.width: 3
+            radius: 4
+            z: 9
+        }
+
+        // Pulsing red dots at the four corners (outside the capture region).
+        Repeater {
+            model: 4
+            visible: root.recordingActive && root.regionWidth > 0 && root.regionHeight > 0
+            Rectangle {
+                required property int index
+                readonly property real cx: (index === 0 || index === 2) ? root.regionX - 3 : root.regionX + root.regionWidth + 3
+                readonly property real cy: (index === 0 || index === 1) ? root.regionY - 3 : root.regionY + root.regionHeight + 3
+                x: cx - 7; y: cy - 7
+                width: 14; height: 14; radius: 7
+                color: "#e53935"
+                border.width: 1.5
+                border.color: Qt.rgba(1, 1, 1, 0.6)
+                z: 11
+                SequentialAnimation on opacity {
+                    loops: Animation.Infinite
+                    NumberAnimation { from: 1; to: 0.25; duration: 700 }
+                    NumberAnimation { from: 0.25; to: 1; duration: 700 }
+                }
+            }
+        }
+
+        // ── Recording timer + stop bar (state 2): clamped into view ──
         Item {
             id: recordingControls
             visible: root.recordingActive
@@ -1725,113 +1733,6 @@ PanelWindow {
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
                         onClicked: root.stopScreenRecording()
-                    }
-                }
-            }
-        }
-
-        // ── Stopped state: save / open / discard (state 3) ──
-        // Anchored below the selection (or above if there is no room).
-        Item {
-            id: stoppedControls
-            visible: root.recordingStopped
-            x: {
-                const rightEdge = root.regionX + root.regionWidth;
-                const barW = width;
-                const clampedX = Math.max(0, rightEdge - barW);
-                return Math.min(clampedX, root.width - barW);
-            }
-            y: {
-                const barH = height;
-                const yBelow = root.regionY + root.regionHeight + 12;
-                if (yBelow + barH > root.height)
-                    return Math.max(0, root.regionY - 12 - barH);
-                return yBelow;
-            }
-            width: stoppedBar.implicitWidth
-            height: stoppedBar.implicitHeight
-
-            Row {
-                id: stoppedBar
-                spacing: 8
-
-                Rectangle {
-                    width: 40; height: 40; radius: 8
-                    color: saveRecMouse.containsMouse ? TuiStyle.controlHover : Qt.rgba(0, 0, 0, 0.65)
-                    border.width: 1
-                    border.color: saveRecMouse.containsMouse ? TuiStyle.accent : Qt.rgba(1, 1, 1, 0.2)
-
-                    MaterialSymbol {
-                        anchors.centerIn: parent
-                        iconSize: 22
-                        color: saveRecMouse.containsMouse ? TuiStyle.accent : root.brightText
-                        text: "save"
-                    }
-
-                    MouseArea {
-                        id: saveRecMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (root.recordingOutputPath) {
-                                const saveDir = Config.options.screenSnip.savePath !== "" ? Config.options.screenSnip.savePath : "";
-                                Quickshell.execDetached(["bash", "-c",
-                                    `cp -f '${root.recordingOutputPath.replace(/'/g, "'\\''")}' '${(saveDir || "${XDG_VIDEOS_DIR:-$HOME/Videos}").replace(/'/g, "'\\''")}' 2>/dev/null || cp -f '${root.recordingOutputPath.replace(/'/g, "'\\''")}' "$HOME/Videos"`]);
-                            }
-                            root.dismiss();
-                        }
-                    }
-                }
-
-                Rectangle {
-                    width: 40; height: 40; radius: 8
-                    color: openRecMouse.containsMouse ? TuiStyle.controlHover : Qt.rgba(0, 0, 0, 0.65)
-                    border.width: 1
-                    border.color: openRecMouse.containsMouse ? TuiStyle.accent : Qt.rgba(1, 1, 1, 0.2)
-
-                    MaterialSymbol {
-                        anchors.centerIn: parent
-                        iconSize: 22
-                        color: openRecMouse.containsMouse ? TuiStyle.accent : root.brightText
-                        text: "folder_open"
-                    }
-
-                    MouseArea {
-                        id: openRecMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (root.recordingOutputPath)
-                                Quickshell.execDetached(["xdg-open", root.recordingOutputPath]);
-                        }
-                    }
-                }
-
-                Rectangle {
-                    width: 40; height: 40; radius: 8
-                    color: discardRecMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.6) : Qt.rgba(0, 0, 0, 0.65)
-                    border.width: 1
-                    border.color: discardRecMouse.containsMouse ? "#e53935" : Qt.rgba(1, 1, 1, 0.2)
-
-                    MaterialSymbol {
-                        anchors.centerIn: parent
-                        iconSize: 22
-                        color: root.brightText
-                        text: "delete"
-                    }
-
-                    MouseArea {
-                        id: discardRecMouse
-                        anchors.fill: parent
-                        hoverEnabled: true
-                        cursorShape: Qt.PointingHandCursor
-                        onClicked: {
-                            if (root.recordingOutputPath)
-                                Quickshell.execDetached(["rm", "-f", root.recordingOutputPath]);
-                            root.dismiss();
-                        }
                     }
                 }
             }
