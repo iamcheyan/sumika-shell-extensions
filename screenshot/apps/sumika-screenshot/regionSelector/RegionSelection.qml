@@ -584,16 +584,17 @@ PanelWindow {
     function stopScreenRecording() {
         recordCountdownTimer.stop();
         root.recordCountdown = 0;
+        // Cancel during countdown: nothing to stop yet, just close.
         if (!root.recordingActive && !recordStartProc.running) {
             root.dismiss();
             return;
         }
         recordElapsedTimer.stop();
-        // Stopping must close the recording UI immediately. The script waits
-        // independently for wf-recorder to write the MP4 trailer, then sends
-        // the completion notification with the final output path.
-        Quickshell.execDetached(["sumika-record", "--stop"]);
-        root.dismiss();
+        // Stop the recorder but keep the overlay up: recordStopProc.onExited
+        // flips recordingStopped=true so the chrome shows the save/open/
+        // discard controls. The script waits for the MP4 trailer, then
+        // prints the final output path to stdout (captured below).
+        recordStopProc.running = true;
     }
 
     Process {
@@ -1092,7 +1093,7 @@ PanelWindow {
     // Post-phase full-screen capture + action bar
     Item {
         id: actionBarMask
-        visible: root.phase === RegionSelection.Phase.Post
+        visible: root.phase === RegionSelection.Phase.Post && !root.isRecording
         anchors.fill: parent
         focus: true
 
@@ -1179,7 +1180,7 @@ PanelWindow {
 
         Rectangle {
             id: postSelectionBox
-            visible: root.phase === RegionSelection.Phase.Post && root.regionWidth > 0 && root.regionHeight > 0
+            visible: root.phase === RegionSelection.Phase.Post && !root.isRecording && root.regionWidth > 0 && root.regionHeight > 0
             x: root.regionX
             y: root.regionY
             width: root.regionWidth
@@ -1653,9 +1654,13 @@ PanelWindow {
             y: {
                 const barH = height;
                 const yAbove = root.regionY - 12 - barH;
-                if (yAbove < 0)
-                    return root.regionY + root.regionHeight + 12;
-                return yAbove;
+                const yBelow = root.regionY + root.regionHeight + 12;
+                if (yAbove >= 0)
+                    return yAbove;
+                if (yBelow + barH <= root.height)
+                    return yBelow;
+                // Both edges overflow (near-fullscreen region): clamp inside.
+                return Math.max(0, root.height - barH - 12);
             }
             width: recordBar.implicitWidth
             height: recordBar.implicitHeight

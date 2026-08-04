@@ -262,6 +262,18 @@ flock -w 1 9 || exit 0
 
 # Re-press while open = cancel (same mental model as slurp toggle).
 if is_running; then
+    # A repeat launcher invocation must never act as a stop toggle for an
+    # active recording: killing the selector here would let the
+    # --stop-with-parent watcher SIGINT wf-recorder. Bail out instead.
+    rec_pidfile="${XDG_RUNTIME_DIR:-/tmp}/sumika-record.pid"
+    case "$action" in
+        record|recordWithSound)
+            if [ -f "$rec_pidfile" ] && kill -0 "$(cat "$rec_pidfile" 2>/dev/null)" 2>/dev/null; then
+                exec 9>&-
+                exit 0
+            fi
+            ;;
+    esac
     kill_running
     wait_until_not_running
     rm -f /tmp/sumika-screenshot-active
