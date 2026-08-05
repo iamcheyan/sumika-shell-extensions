@@ -200,8 +200,9 @@ fast_capture() {
     # corner, so a selection cannot spill into an adjacent monitor.
     # Start slurp FIRST so the darken mask is on screen, then freeze the bar
     # so live menus disappear under the mask (no bright empty flash).
+    # Match RegionSelection.overlayColor exactly: 0x80 alpha is 50% black.
     slurp -d -f '%x,%y %Wx%H|%o' \
-        -b '#00000066' -c '#f4f4f4ff' -s '#ffffff22' -w 2 \
+        -b '#00000080' -c '#f4f4f4ff' -s '#ffffff22' -w 2 \
         > "$selection_file" 2>/dev/null &
     slurp_pid=$!
     printf '%s\n' "$slurp_pid" > "$fast_pid_file"

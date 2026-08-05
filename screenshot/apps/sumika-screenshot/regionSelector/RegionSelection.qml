@@ -6,7 +6,6 @@ import qs.services
 import QtQuick
 import QtQuick.Layouts
 import QtQuick.Controls
-import Qt.labs.synchronizer
 import Quickshell
 import Quickshell.Io
 import Quickshell.Wayland
@@ -16,11 +15,16 @@ PanelWindow {
     id: root
     visible: false
     color: "transparent"
-    WlrLayershell.namespace: "quickshell:regionSelector"
+    // Match slurp's layer namespace. This keeps Hyprland's layer-surface
+    // treatment (especially any blur rules) identical for screenshot and
+    // recording selection overlays.
+    WlrLayershell.namespace: "selection"
     WlrLayershell.layer: WlrLayer.Overlay
-    // During an active recording, let the recorded application keep keyboard
-    // focus. Selection/edit modes still need exclusive keyboard input.
-    WlrLayershell.keyboardFocus: root.visible && !root.recordingSession
+    // Countdown owns Esc so it can cancel before recording starts. Once live,
+    // return keyboard focus to the recorded application (Esc can then close
+    // its dialogs without affecting recording).
+    WlrLayershell.keyboardFocus: root.visible
+        && (!root.recordingSession || root.recordCountdown > 0)
         ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
     exclusionMode: ExclusionMode.Ignore
     anchors {
@@ -45,15 +49,59 @@ PanelWindow {
     // during countdown, when there is no recording control to interact with.
     Item { id: noRecordingInput; width: 0; height: 0 }
 
+    // Single source of truth for the four-rectangle outside dim. Screenshot
+    // selection and recording both instantiate this so the mask color, alpha
+    // and geometry are byte-identical across modes — never two copies in two
+    // places that can drift (which previously made recording look "heavier").
+    component OutsideMask: Item {
+        id: mask
+        required property real regionX
+        required property real regionY
+        required property real regionWidth
+        required property real regionHeight
+        property color color: root.overlayColor
+        Rectangle {
+            x: 0; y: 0
+            width: mask.parent.width
+            height: Math.max(0, mask.regionY)
+            color: mask.color
+        }
+        Rectangle {
+            x: 0
+            y: Math.min(mask.parent.height, mask.regionY + mask.regionHeight)
+            width: mask.parent.width
+            height: Math.max(0, mask.parent.height - y)
+            color: mask.color
+        }
+        Rectangle {
+            x: 0
+            y: Math.max(0, mask.regionY)
+            width: Math.max(0, mask.regionX)
+            height: Math.max(0, Math.min(mask.parent.height, mask.regionY + mask.regionHeight) - y)
+            color: mask.color
+        }
+        Rectangle {
+            x: Math.min(mask.parent.width, mask.regionX + mask.regionWidth)
+            y: Math.max(0, mask.regionY)
+            width: Math.max(0, mask.parent.width - x)
+            height: Math.max(0, Math.min(mask.parent.height, mask.regionY + mask.regionHeight) - y)
+            color: mask.color
+        }
+    }
     // Styles
     property string screenshotDir: Directories.screenshotTemp
-    property color overlayColor: ColorUtils.transparentize("#000000", 0.5)
+    // One explicit, mode-independent dim value. Both screenshot selection and
+    // recording instantiate OutsideMask with this exact colour.
+    property color overlayColor: Qt.rgba(0, 0, 0, 0.5)
     // Keep screenshot selection neutral. Theme accent colors can be bright
     // green; using them here makes the capture mask visually distracting.
     property color brightText: "#f4f4f4"
     property color brightSecondary: "#b8b8b8"
     property color brightTertiary: "#8f8f8f"
     property color selectionBorderColor: "#e5e5e5"
+    // Recording reuses the selection frame but tints it red as a live-state
+    // cue — the only deliberate divergence from the screenshot visual.
+    property color recordingAccent: "#e53935"
     property color selectionFillColor: "#22ffffff"
     property color windowBorderColor: brightSecondary
     property color windowFillColor: "#18ffffff"
@@ -274,10 +322,6 @@ PanelWindow {
     property bool recordingActive: false
     property int recordingElapsedSec: 0
     property string recordingOutputPath: ""
-    // One uninterrupted visual state after the user finishes drawing: the
-    // same outside-selection dim is present through countdown, startup, and
-    // recording.
-    readonly property bool recordingMaskVisible: root.recordingSession
     readonly property string recordingElapsedText: {
         const m = Math.floor(root.recordingElapsedSec / 60);
         const s = root.recordingElapsedSec % 60;
@@ -324,8 +368,10 @@ PanelWindow {
     onPreparationDoneChanged: {
         if (!preparationDone) return;
         if (root.isRecording) {
-            // Live compositor capture — show the same darken mask as screenshot
-            // select, without a frozen snapshot.
+            // Keep recording on the live compositor surface. Rendering a grim
+            // snapshot through an OpacityMask creates a scaled off-screen
+            // texture, which looks blurred compared with slurp's live
+            // screenshot selection. OutsideMask supplies the same dim only.
             root.closeMenusOnShow = true;
             root.visible = true;
             root.captureReady = true;
@@ -540,6 +586,13 @@ PanelWindow {
         root.recordingElapsedSec = 0;
         root.recordingOutputPath = "";
         recordCountdownTimer.restart();
+    }
+
+    function cancelRecordCountdown() {
+        recordCountdownTimer.stop();
+        root.recordCountdown = 0;
+        root.recordingSession = false;
+        root.dismiss();
     }
 
     function startScreenRecording() {
@@ -793,7 +846,8 @@ PanelWindow {
         source: root.snapshotReady
             ? Qt.resolvedUrl(`file://${root.screenshotPath}?r=${root.snapshotRevision}`)
             : ""
-        // Live recording has no frozen snapshot underlay.
+        // Recording intentionally has no frozen-image underlay: it remains
+        // live and crisp like the normal slurp screenshot selector.
         visible: root.visible && !root.isRecording && root.snapshotReady
     }
 
@@ -801,12 +855,18 @@ PanelWindow {
         anchors.fill: parent
         visible: root.visible
         focus: root.visible
-        Keys.onPressed: (event) => { // Esc closes selection, never an active recording
+        Keys.onPressed: (event) => {
             if (event.key === Qt.Key_Escape) {
-                if (root.recordingUi) {
-                    // Recording is intentionally stopped only by its visible
-                    // Stop button. Ignore Escape and other incidental input.
+                if (root.recordCountdown > 0) {
+                    root.cancelRecordCountdown();
                     event.accepted = true;
+                    return;
+                }
+                if (root.recordingActive) {
+                    // Live recording normally has no keyboard focus. If a key
+                    // event is already in flight, leave Esc for the recorded
+                    // application's dialogs instead of stopping recording.
+                    event.accepted = false;
                     return;
                 }
                 root.dismiss();
@@ -821,41 +881,23 @@ PanelWindow {
         }
     }
 
-    // Frozen screenshot/edit selection has its own mask layer, separate from
-    // the selection MouseArea. This keeps the dimming stable even when input
-    // routing changes for the recording workflow.
-    readonly property bool screenshotMaskVisible: root.visible
-        && !root.isRecording
+    // The one and only outside dim. A single OutsideMask instance covers
+    // screenshot selection, recording countdown and live recording — from the
+    // moment the overlay is visible and the selection is ready, through to
+    // dismiss. Recording no longer excludes itself: the same mask is present
+    // while drawing the capture box, during countdown, and while recording,
+    // so there is never a frame without it and never two layers of it. It
+    // covers only the area outside the selection, so wf-recorder's -g region
+    // never captures it.
+    readonly property bool maskVisible: root.visible
         && root.captureReady
         && root.selectionMode === RegionSelection.SelectionMode.RectCorners
-    Rectangle {
-        visible: root.screenshotMaskVisible
-        x: 0; y: 0; width: parent.width
-        height: Math.max(0, root.regionY)
-        color: root.overlayColor
-    }
-    Rectangle {
-        visible: root.screenshotMaskVisible
-        x: 0
-        y: Math.min(parent.height, root.regionY + root.regionHeight)
-        width: parent.width
-        height: Math.max(0, parent.height - y)
-        color: root.overlayColor
-    }
-    Rectangle {
-        visible: root.screenshotMaskVisible
-        x: 0
-        y: Math.max(0, root.regionY)
-        width: Math.max(0, root.regionX)
-        height: Math.max(0, Math.min(parent.height, root.regionY + root.regionHeight) - y)
-        color: root.overlayColor
-    }
-    Rectangle {
-        visible: root.screenshotMaskVisible
-        x: Math.min(parent.width, root.regionX + root.regionWidth)
-        y: Math.max(0, root.regionY)
-        width: Math.max(0, parent.width - x)
-        height: Math.max(0, Math.min(parent.height, root.regionY + root.regionHeight) - y)
+    OutsideMask {
+        visible: root.maskVisible
+        regionX: root.regionX
+        regionY: root.regionY
+        regionWidth: root.regionWidth
+        regionHeight: root.regionHeight
         color: root.overlayColor
     }
 
@@ -943,13 +985,12 @@ PanelWindow {
                     ? (root.draggingY >= root.dragStartY ? root.regionY + root.regionHeight : root.regionY)
                     : mouseArea.mouseY
                 color: root.selectionBorderColor
-                overlayColor: root.overlayColor
-                // RectCornersSelectionDetails keeps its outside mask visible
-                // in this mode; hide only its dashed selection decorations
-                // because recordingChrome supplies the red recording frame.
-                breathingBorderOnly: root.recordingActive
-                showOutsideOverlay: root.isRecording
-                captureReady: root.captureReady && root.phase === RegionSelection.Phase.Select
+                // Screenshot and recording share one solid-frame style; the
+                // details component tints it with the accent color and adds
+                // pulsing corner dots while a recording is live. The outside
+                // dim mask is owned by RegionSelection.OutsideMask.
+                recordingActive: root.recordingActive
+                accentColor: root.recordingAccent
             }
         }
 
@@ -1163,7 +1204,7 @@ PanelWindow {
             border.width: 2
             radius: 4
             z: 10
-            opacity: root.postTool === "mosaic" ? 0.55 : 1
+            opacity: root.postTool === "mosaic" ? 0.55 : 0.9
 
             readonly property real handleSize: 14
             readonly property real handleHitPad: 10
@@ -1530,49 +1571,14 @@ PanelWindow {
     // the recorded application stays interactive. The video never captures a
     // full-screen overlay. Two states share this surface:
     //   1. countdown (recordCountdown 3/2/1) — big number + hint
-    //   2. recording (recordingActive) — red frame, timer + stop button
+    //   2. recording (recordingActive) — timer + stop button
+    // The selection frame and pulsing corner dots are drawn by the shared
+    // RectCornersSelectionDetails (tinted with recordingAccent) so the box
+    // looks identical to a screenshot crop — only its color signals "live".
     Item {
         id: recordingChrome
         anchors.fill: parent
         visible: root.recordingUi
-
-        // Keep one explicit mask from the first countdown frame through the
-        // live recording state. It covers only the four areas outside the
-        // capture rectangle, so wf-recorder's -g selection never records it.
-        // Keeping it in the chrome avoids a visual gap when input switches
-        // away from the selection MouseArea after the box is completed.
-        Rectangle {
-            visible: root.recordingMaskVisible
-            x: 0; y: 0
-            width: parent.width
-            height: Math.max(0, root.regionY)
-            color: root.overlayColor
-        }
-        Rectangle {
-            visible: root.recordingMaskVisible
-            x: 0
-            y: Math.min(parent.height, root.regionY + root.regionHeight)
-            width: parent.width
-            height: Math.max(0, parent.height - y)
-            color: root.overlayColor
-        }
-        Rectangle {
-            visible: root.recordingMaskVisible
-            x: 0
-            y: Math.max(0, root.regionY)
-            width: Math.max(0, root.regionX)
-            height: Math.max(0, Math.min(parent.height, root.regionY + root.regionHeight) - y)
-            color: root.overlayColor
-        }
-        Rectangle {
-            visible: root.recordingMaskVisible
-            x: Math.min(parent.width, root.regionX + root.regionWidth)
-            y: Math.max(0, root.regionY)
-            width: Math.max(0, parent.width - x)
-            height: Math.max(0, Math.min(parent.height, root.regionY + root.regionHeight) - y)
-            color: root.overlayColor
-        }
-
         // ── Countdown overlay (state 1) ──
         Item {
             visible: root.recordCountdown > 0
@@ -1611,45 +1617,10 @@ PanelWindow {
             }
         }
 
-        // Red frame + pulsing corner dots around the capture rectangle.
-        // The Rectangle sits 3px OUTSIDE the selection so its border pixels
-        // are never inside the wf-recorder -g region and never recorded.
-        Rectangle {
-            visible: root.recordingActive && root.regionWidth > 0 && root.regionHeight > 0
-            x: root.regionX - 3
-            y: root.regionY - 3
-            width: root.regionWidth + 6
-            height: root.regionHeight + 6
-            color: "transparent"
-            border.color: "#e53935"
-            border.width: 3
-            radius: 4
-            z: 9
-        }
-
-        // Pulsing red dots at the four corners (outside the capture region).
-        Repeater {
-            model: 4
-            visible: root.recordingActive && root.regionWidth > 0 && root.regionHeight > 0
-            Rectangle {
-                required property int index
-                readonly property real cx: (index === 0 || index === 2) ? root.regionX - 3 : root.regionX + root.regionWidth + 3
-                readonly property real cy: (index === 0 || index === 1) ? root.regionY - 3 : root.regionY + root.regionHeight + 3
-                x: cx - 7; y: cy - 7
-                width: 14; height: 14; radius: 7
-                color: "#e53935"
-                border.width: 1.5
-                border.color: Qt.rgba(1, 1, 1, 0.6)
-                z: 11
-                SequentialAnimation on opacity {
-                    loops: Animation.Infinite
-                    NumberAnimation { from: 1; to: 0.25; duration: 700 }
-                    NumberAnimation { from: 0.25; to: 1; duration: 700 }
-                }
-            }
-        }
-
         // ── Recording timer + stop bar (state 2): clamped into view ──
+        // Position logic mirrors the post-phase action bar: prefer below the
+        // region, fall back above, then clamp inside. Same 40px button grid,
+        // same TuiStyle theming, so the two control surfaces look alike.
         Item {
             id: recordingControls
             visible: root.recordingActive
@@ -1661,12 +1632,12 @@ PanelWindow {
             }
             y: {
                 const barH = height;
-                const yAbove = root.regionY - 12 - barH;
                 const yBelow = root.regionY + root.regionHeight + 12;
-                if (yAbove >= 0)
-                    return yAbove;
                 if (yBelow + barH <= root.height)
                     return yBelow;
+                const yAbove = root.regionY - 12 - barH;
+                if (yAbove >= 0)
+                    return yAbove;
                 // Both edges overflow (near-fullscreen region): clamp inside.
                 return Math.max(0, root.height - barH - 12);
             }
@@ -1677,14 +1648,16 @@ PanelWindow {
                 id: recordBar
                 spacing: 8
 
-                // Timer pill: pulsing red dot + elapsed time
+                // Timer pill: pulsing accent dot + elapsed time. Same control
+                // surface as the post-phase buttons (TuiStyle.control), with
+                // the recording accent only on the live indicator dot.
                 Rectangle {
                     width: Math.max(110, recTimerText.implicitWidth + 36)
                     height: 40
                     radius: 8
-                    color: Qt.rgba(0, 0, 0, 0.65)
+                    color: TuiStyle.control
                     border.width: 1
-                    border.color: Qt.rgba(0.9, 0.2, 0.2, 0.7)
+                    border.color: TuiStyle.menuBorder
 
                     RowLayout {
                         anchors.centerIn: parent
@@ -1694,7 +1667,7 @@ PanelWindow {
                             Layout.preferredWidth: 12
                             Layout.preferredHeight: 12
                             radius: 6
-                            color: "#e53935"
+                            color: root.recordingAccent
                             SequentialAnimation on opacity {
                                 loops: Animation.Infinite
                                 NumberAnimation { from: 1; to: 0.25; duration: 700 }
@@ -1705,7 +1678,7 @@ PanelWindow {
                         StyledText {
                             id: recTimerText
                             text: root.recordingElapsedText
-                            color: root.brightText
+                            color: TuiStyle.fg
                             font.family: Appearance.font.family.main
                             font.pixelSize: 16
                             font.weight: Font.DemiBold
@@ -1713,17 +1686,18 @@ PanelWindow {
                     }
                 }
 
-                // Stop button
+                // Stop button — themed like the post-phase action buttons;
+                // hover lights it up with the recording accent.
                 Rectangle {
                     width: 40; height: 40; radius: 8
-                    color: stopRecMouse.containsMouse ? Qt.rgba(0.9, 0.2, 0.2, 0.9) : Qt.rgba(0, 0, 0, 0.65)
+                    color: stopRecMouse.containsMouse ? TuiStyle.controlHover : TuiStyle.control
                     border.width: 1
-                    border.color: stopRecMouse.containsMouse ? "#e53935" : Qt.rgba(0.9, 0.2, 0.2, 0.7)
+                    border.color: stopRecMouse.containsMouse ? TuiStyle.controlActiveBorder : TuiStyle.menuBorder
 
                     MaterialSymbol {
                         anchors.centerIn: parent
                         iconSize: 22
-                        color: root.brightText
+                        color: stopRecMouse.containsMouse ? root.recordingAccent : TuiStyle.fg
                         text: "stop"
                     }
 
