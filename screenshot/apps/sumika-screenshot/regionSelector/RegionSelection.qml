@@ -125,7 +125,22 @@ PanelWindow {
 
     // Screen & interaction vars
     readonly property HyprlandMonitor hyprlandMonitor: Hyprland.monitorFor(screen)
-    readonly property real monitorScale: hyprlandMonitor?.scale ?? 1
+    // Crop factor from QML (screen) coordinates to snapshot pixels. Derive it
+    // from the snapshot's actual pixel size instead of trusting Hyprland IPC:
+    // on non-Hyprland compositors (labwc) Hyprland.monitorFor() returns a stub
+    // monitor whose scale defaults to 0, which makes every crop "0x0+0+0"
+    // (ImageMagick then returns the whole image). frozenSnapshot.sourceSize is
+    // the grim output (physical pixels) while screen.width is QML units, so
+    // this ratio is exact regardless of compositor or display scale.
+    readonly property real monitorScale: {
+        const srcW = frozenSnapshot.sourceSize.width;
+        if (srcW > 0 && root.screen && root.screen.width > 0) {
+            return srcW / root.screen.width;
+        }
+        return (root.hyprlandMonitor && root.hyprlandMonitor.scale > 0)
+            ? root.hyprlandMonitor.scale
+            : 1;
+    }
     readonly property real monitorOffsetX: hyprlandMonitor?.x ?? 0
     readonly property real monitorOffsetY: hyprlandMonitor?.y ?? 0
     property int activeWorkspaceId: hyprlandMonitor?.activeWorkspace?.id ?? 0
@@ -949,6 +964,26 @@ PanelWindow {
                     return;
                 }
             }
+            // Materialize rectangle geometry at release time. The normal
+            // region properties are bindings over draggingX/draggingY; if
+            // they remain bindings, later pointer movement toward the action
+            // bar can change the crop after the selection was completed.
+            else if (root.selectionMode === RegionSelection.SelectionMode.RectCorners) {
+                const dx = mouse.x - root.dragStartX;
+                const dy = mouse.y - root.dragStartY;
+                if ((mouse.modifiers & Qt.ShiftModifier) !== 0) {
+                    const size = Math.max(Math.abs(dx), Math.abs(dy));
+                    root.regionWidth = size;
+                    root.regionHeight = size;
+                    root.regionX = dx >= 0 ? root.dragStartX : root.dragStartX - size;
+                    root.regionY = dy >= 0 ? root.dragStartY : root.dragStartY - size;
+                } else {
+                    root.regionX = Math.min(root.dragStartX, mouse.x);
+                    root.regionY = Math.min(root.dragStartY, mouse.y);
+                    root.regionWidth = Math.abs(dx);
+                    root.regionHeight = Math.abs(dy);
+                }
+            }
             // Circle dragging?
             else if (root.selectionMode === RegionSelection.SelectionMode.Circle) {
                 const padding = Config.options.regionSelector.circle.padding + Config.options.regionSelector.circle.strokeWidth / 2;
@@ -962,6 +997,12 @@ PanelWindow {
                 root.regionWidth = maxX - minX + padding * 2;
                 root.regionHeight = maxY - minY + padding * 2;
             }
+            // Freeze the selected geometry before the delayed crop and before
+            // the pointer moves to the post-capture action bar. If dragging
+            // remains true, the binding-backed regionX/Y/Width/Height keeps
+            // following the pointer and can turn a small selection into a
+            // full-screen crop while the user clicks Copy.
+            root.dragging = false;
             root.snip();
         }
         onPositionChanged: (mouse) => {
