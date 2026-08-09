@@ -33,6 +33,10 @@ Item {
     readonly property var screen: root.QsWindow.window?.screen
     readonly property real useShortenedForm: (Appearance.sizes.barHellaShortenScreenWidthThreshold >= screen?.width) ? 2 : (Appearance.sizes.barShortenScreenWidthThreshold >= screen?.width) ? 1 : 0
 
+    /// Toplevel captured at click time — the menu acts on the window the
+    /// user clicked on, not whatever becomes active while the menu is open.
+    property var menuTarget: null
+
     implicitWidth: titleAreaWidth
     implicitHeight: 28
     visible: !root.hideOnShortScreen || root.useShortenedForm === 0
@@ -126,6 +130,34 @@ Item {
         return "fedora";
     }
 
+    RippleButton {
+        id: titleButton
+        anchors.fill: parent
+        buttonRadius: 6
+        colBackground: "transparent"
+        colBackgroundHover: Qt.rgba(1, 1, 1, 0.10)
+        colBackgroundToggled: Qt.rgba(1, 1, 1, 0.18)
+        colBackgroundToggledHover: Qt.rgba(1, 1, 1, 0.26)
+        colRipple: Qt.rgba(1, 1, 1, 0.12)
+        toggled: windowMenu.item != null
+
+        onClicked: {
+            console.log("[ActiveWindow] clicked visible=", root.visible,
+                "shortened=", root.useShortenedForm,
+                "target=", root.focusedToplevel?.appId ?? "null");
+            // Toggle: second click on the title closes the menu.
+            const menu = windowMenu.item;
+            if (menu !== null && menu.visible) {
+                console.log("[ActiveWindow] toggle->closing");
+                menu.close();
+                return;
+            }
+            console.log("[ActiveWindow] toggle->opening");
+            root.menuTarget = root.focusedToplevel;
+            windowMenu.open();
+        }
+    }
+
     RowLayout {
         anchors.fill: parent
         spacing: 6
@@ -171,6 +203,14 @@ Item {
             elide: Text.ElideRight
             maximumLineCount: 1
             text: root.displayTitle
+        }
+    }
+
+    BarContextMenu {
+        id: windowMenu
+        anchorItem: titleButton
+        sourceComponent: ActiveWindowMenu {
+            targetToplevel: root.menuTarget
         }
     }
 }
