@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# sumika-launch-musubi-tui — Launch the Musubi file-backup TUI in a terminal
+# Follows the same unified TUI framework as theme-settings, keyboard-remap, etc.
+#
+# NOTE: xdg-terminal-exec is deliberately NOT used as the primary launcher:
+# its kitty execarg mapping is `--` (kitty --class X -- <cmd>), which fails to
+# open a window under labwc. Direct terminal -e calls are used instead.
+
+set -euo pipefail
+
+MUSUBI_BIN="$(command -v musubi 2>/dev/null || true)"
+if [[ -z "$MUSUBI_BIN" ]]; then
+  MUSUBI_BIN="${HOME}/.local/bin/musubi"
+fi
+if [[ ! -x "$MUSUBI_BIN" ]]; then
+  echo "musubi binary not found at $MUSUBI_BIN" >&2
+  exit 1
+fi
+
+# App-id matches hypr/looknfeel.lua -> io.github.iamcheyan.musubi (tui_rule)
+APP_ID=io.github.iamcheyan.musubi
+
+run_tui() {
+  exec "$MUSUBI_BIN"
+}
+
+if command -v foot >/dev/null 2>&1 && foot --version >/dev/null 2>&1; then
+  exec setsid uwsm-app -- foot --app-id="$APP_ID" -e "$MUSUBI_BIN"
+fi
+
+if command -v kitty >/dev/null 2>&1; then
+  exec setsid uwsm-app -- kitty --class="$APP_ID" -e "$MUSUBI_BIN"
+fi
+
+if command -v alacritty >/dev/null 2>&1; then
+  exec setsid uwsm-app -- alacritty --class "$APP_ID" -e "$MUSUBI_BIN"
+fi
+
+run_tui

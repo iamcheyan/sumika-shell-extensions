@@ -18,7 +18,7 @@ PopupColumn {
         title: "Backup Settings"
         subtitle: "Manage SMB shares and backups"
         onClicked: {
-            Quickshell.execDetached(["musubi"]);
+            Quickshell.execDetached(["sumika-launch-musubi-tui"]);
         }
     }
 }
