@@ -5,6 +5,8 @@ set -eu
 # Usage:
 #   sumika-screenshot              # fast region screenshot (slurp + grim)
 #   sumika-screenshot screenshot   # same as above
+#   sumika-screenshot fullscreen   # capture the focused/first monitor
+#   sumika-screenshot delay        # capture the focused/first monitor after 3s
 #   sumika-screenshot edit         # frozen screenshot & edit
 #   sumika-screenshot search       # search with Google Lens
 #   sumika-screenshot ocr          # OCR text recognition
@@ -87,10 +89,24 @@ wait_until_running_or_failed() {
 }
 
 focused_monitor() {
-    command -v hyprctl >/dev/null 2>&1 || return 0
-    hyprctl monitors -j 2>/dev/null \
-        | jq -r '.[] | select(.focused) | .name' 2>/dev/null \
-        | head -n 1
+    # Hyprland: query the focused monitor directly.
+    if command -v hyprctl >/dev/null 2>&1; then
+        mon="$(hyprctl monitors -j 2>/dev/null \
+            | jq -r '.[] | select(.focused) | .name' 2>/dev/null \
+            | head -n 1)"
+        [ -n "$mon" ] && { printf '%s\n' "$mon"; return 0; }
+    fi
+    # wlroots compositors (labwc): no focused concept in wlr-randr; fall
+    # back to the first enabled output. Single-monitor labwc sessions get
+    # the exact name; multi-output picks the first enabled, matching the
+    # slurp %o geometry the fast-capture path relies on.
+    if command -v wlr-randr >/dev/null 2>&1; then
+        mon="$(wlr-randr --json 2>/dev/null \
+            | jq -r '.[] | select(.enabled) | .name' 2>/dev/null \
+            | head -n 1)"
+        [ -n "$mon" ] && { printf '%s\n' "$mon"; return 0; }
+    fi
+    return 0
 }
 
 # Hide the software cursor for the duration of grim. Moving it "off-screen"
@@ -255,6 +271,53 @@ fast_capture() {
 }
 
 
+# Fullscreen / delayed capture of one monitor (focused on Hyprland, first
+# enabled on wlroots/labwc). Shares the monitor resolution + clipboard store
+# pipeline with fast_capture.
+capture_monitor() {
+    _delay="${1:-0}"
+    if ! command -v grim >/dev/null 2>&1 || ! command -v wl-copy >/dev/null 2>&1; then
+        notify-send -u critical "Screenshot" "grim and wl-copy are required" 2>/dev/null || true
+        exit 127
+    fi
+
+    target_monitor="$(focused_monitor)"
+    if [ -z "$target_monitor" ]; then
+        notify-send -u critical "Screenshot" "No enabled monitor found" 2>/dev/null || true
+        exit 1
+    fi
+
+    if [ "$_delay" -gt 0 ]; then
+        notify-send -i camera-photo "Screenshot" "Capturing ${target_monitor} in ${_delay}s" 2>/dev/null || true
+        sleep "$_delay"
+    fi
+
+    tmp_file="$(mktemp /tmp/sumika-screenshot.XXXXXX.png)"
+    trap 'restore_cursor; rm -f "$tmp_file"' EXIT INT TERM
+    hide_cursor
+    grim -o "$target_monitor" "$tmp_file"
+    restore_cursor
+
+    save_dir=""
+    _sumika_cfg="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sumika-shell}"
+    _cfg_file="$_sumika_cfg/sumika.json"
+    [ -f "$_cfg_file" ] || _cfg_file="$HOME/.config/quickshell/config.json"
+    if command -v jq >/dev/null 2>&1 && [ -r "$_cfg_file" ]; then
+        save_dir="$(jq -r '.screenSnip.savePath // empty' "$_cfg_file" 2>/dev/null || true)"
+    fi
+    if [ -n "$save_dir" ]; then
+        mkdir -p "$save_dir"
+        save_path="$save_dir/screenshot-$(date '+%Y-%m-%d_%H.%M.%S').png"
+        cp "$tmp_file" "$save_path"
+    fi
+    cliphist store < "$tmp_file" 2>/dev/null || true
+    wl-copy --type image/png < "$tmp_file"
+    rm -f "$tmp_file"
+    trap - EXIT INT TERM
+    notify-send -i camera-photo "Screenshot" "${target_monitor} copied to clipboard" 2>/dev/null || true
+}
+
+
 # Serialize the critical "kill + relaunch" section so rapid clicks do not
 # race each other. The lock is held ONLY for this section, then released before
 # launching Quickshell, so wl-copy/grim/hyprpicker never inherit it.
@@ -408,6 +471,12 @@ case "$action" in
     screenshot)
         fast_capture
         ;;
+    fullscreen)
+        capture_monitor 0
+        ;;
+    delay)
+        capture_monitor 3
+        ;;
     edit|search|ocr|record|recordWithSound)
         # Record uses the same QML selector (mask + region) then a countdown
         # and on-screen stop bar; backend is sumika-record via the QML process.
@@ -415,7 +484,7 @@ case "$action" in
         launch_direct
         ;;
     *)
-        echo "usage: sumika-screenshot [screenshot|edit|search|ocr|record|recordWithSound|toggle]" >&2
+        echo "usage: sumika-screenshot [screenshot|fullscreen|delay|edit|search|ocr|record|recordWithSound|toggle]" >&2
         exit 2
         ;;
 esac

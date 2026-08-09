@@ -33,19 +33,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.camera
         labelText: "Capture Fullscreen"
         onClicked: {
-            Quickshell.execDetached(["bash", "-c",
-                "f=$(mktemp /tmp/sumika-screenshot-full.XXXXXX.png); " +
-                "_prev_invis=$(hyprctl getoption cursor:invisible -j 2>/dev/null | jq -r '.bool // false' 2>/dev/null || echo false); " +
-                "hyprctl eval \"hl.config({ cursor = { invisible = true } })\" >/dev/null 2>&1 || true; " +
-                "sleep 0.03; " +
-                "grim -o $(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name') \"$f\"; " +
-                "if [ \"$_prev_invis\" = true ]; then hyprctl eval \"hl.config({ cursor = { invisible = true } })\" >/dev/null 2>&1 || true; " +
-                "else hyprctl eval \"hl.config({ cursor = { invisible = false } })\" >/dev/null 2>&1 || true; fi; " +
-                "cliphist store < \"$f\" 2>/dev/null || true; " +
-                "wl-copy --type image/png < \"$f\"; " +
-                "rm -f \"$f\"; " +
-                "notify-send -i camera-photo Screenshot \"Full screen copied to clipboard\""
-            ]);
+            Quickshell.execDetached(["sumika-screenshot", "fullscreen"]);
             root.close();
         }
     }
@@ -54,22 +42,7 @@ ContextMenuWindow {
         nerdIcon: NerdIconMap.desktop
         labelText: "Capture Monitor (3s delay)"
         onClicked: {
-            Quickshell.execDetached(["bash", "-c",
-                "f=$(mktemp /tmp/sumika-screenshot-delay.XXXXXX.png); " +
-                "monitor=$(hyprctl monitors -j | jq -r '.[] | select(.focused) | .name'); " +
-                "notify-send -i camera-photo Screenshot \"Capturing current monitor in 3 seconds\"; " +
-                "sleep 3; " +
-                "_prev_invis=$(hyprctl getoption cursor:invisible -j 2>/dev/null | jq -r '.bool // false' 2>/dev/null || echo false); " +
-                "hyprctl eval \"hl.config({ cursor = { invisible = true } })\" >/dev/null 2>&1 || true; " +
-                "sleep 0.03; " +
-                "grim -o \"$monitor\" \"$f\"; " +
-                "if [ \"$_prev_invis\" = true ]; then hyprctl eval \"hl.config({ cursor = { invisible = true } })\" >/dev/null 2>&1 || true; " +
-                "else hyprctl eval \"hl.config({ cursor = { invisible = false } })\" >/dev/null 2>&1 || true; fi; " +
-                "cliphist store < \"$f\" 2>/dev/null || true; " +
-                "wl-copy --type image/png < \"$f\"; " +
-                "rm -f \"$f\"; " +
-                "notify-send -i camera-photo Screenshot \"Current monitor copied to clipboard\""
-            ]);
+            Quickshell.execDetached(["sumika-screenshot", "delay"]);
             root.close();
         }
     }

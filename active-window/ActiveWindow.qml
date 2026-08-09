@@ -1,14 +1,11 @@
 import qs.services
-import qs.core.runtime
 import qs.modules.common
 import qs.modules.common.widgets
-import qs.modules.common.functions
 import QtQuick
 import QtQuick.Layouts
 import Quickshell
 import Quickshell.Widgets
 import Quickshell.Wayland
-import Quickshell.Hyprland
 
 Item {
     id: root
@@ -16,13 +13,20 @@ Item {
     property int titleAreaWidth: 280
     property bool hideOnShortScreen: true
 
-    readonly property HyprlandMonitor monitor: Hyprland.monitorFor(root.QsWindow.window?.screen)
-    readonly property int activeWorkspaceId: ServiceManager.workspace?.monitorActiveWorkspaceId(root.monitor) ?? 0
-    readonly property var displayClient: ServiceManager.workspace?.focusedClientForWorkspace(root.activeWorkspaceId) ?? null
+    // Compositor-agnostic focused-window lookup via zwlr_foreign_toplevel_management_v1
+    // (labwc 0.20+, Hyprland, sway, …). `activated` is the wlr-ftm focus state;
+    // `screens` limits the match to this bar's output on multi-monitor setups.
+    // Falls back to the OS name when nothing is focused on this screen.
+    readonly property var focusedToplevel: {
+        const barScreen = root.screen?.name ?? "";
+        const matches = ToplevelManager.toplevels.values.filter(t =>
+            t.activated && t.screens.some(s => s.name === barScreen));
+        return matches[0] ?? null;
+    }
 
-    readonly property bool hasWindowOnWorkspace: root.displayClient !== null
-    readonly property string windowTitle: root.displayClient?.title ?? ""
-    readonly property string windowIconClass: root.displayClient?.class ?? ""
+    readonly property bool hasWindowOnWorkspace: root.focusedToplevel !== null
+    readonly property string windowTitle: root.focusedToplevel?.title ?? ""
+    readonly property string windowIconClass: root.focusedToplevel?.appId ?? ""
     readonly property string displayTitle: root.hasWindowOnWorkspace ? root.windowTitle : root.desktopDisplayName()
     readonly property string osIconPath: Qt.resolvedUrl("icons/" + root.osIconName() + ".svg")
 

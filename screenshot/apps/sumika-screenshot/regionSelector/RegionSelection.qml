@@ -117,7 +117,10 @@ PanelWindow {
         if (a.floating === b.floating) return 0;
         return a.floating ? -1 : 1;
     })
-    readonly property var layers: HyprlandData.layers
+    // HyprlandData has no `layers` property; under labwc the singleton stays
+    // empty and Hyprland.monitorFor() returns null-ish data, so layerRegions
+    // must degrade to [] instead of throwing on root.layers[...].
+    readonly property var layers: HyprlandData.layers ?? ({})
     readonly property real falsePositivePreventionRatio: 0.5
 
     // Screen & interaction vars
@@ -126,10 +129,17 @@ PanelWindow {
     readonly property real monitorOffsetX: hyprlandMonitor?.x ?? 0
     readonly property real monitorOffsetY: hyprlandMonitor?.y ?? 0
     property int activeWorkspaceId: hyprlandMonitor?.activeWorkspace?.id ?? 0
-    property string screenshotPath: `${root.screenshotDir}/image-${screen.name}-${Date.now()}.png`
+    // Fixed at component construction: a Date.now() binding re-evaluates
+    // whenever any of its (non-reactive) dependencies look dirty, so the
+    // Image can end up opening a different path than the one grim wrote.
+    // Assign once, then only the pre-cap path may override it.
+    property string screenshotPath: root.makeScreenshotPath()
     // True when screenshotPath points to a pre-captured file (created by the
     // shell script). We must not delete it on destruction since other monitor
     // instances may still reference it.
+    function makeScreenshotPath() {
+        return `${root.screenshotDir}/image-${screen.name}-${Date.now()}.png`;
+    }
     property bool preCapSnapshot: false
     // When true, freeze the bar (hide live menus/popups) after the overlay
     // becomes visible. Overlay first, then freeze — so menus vanish under the
