@@ -37,14 +37,21 @@ Singleton {
     // the arrow ends up in the top-left of every capture.
     function grimHideCursorPrelude() {
         return ` _prev_invis=$(hyprctl getoption cursor:invisible -j 2>/dev/null | jq -r '.bool // false' 2>/dev/null || echo false); ` +
+            `if hyprctl monitors -j >/dev/null 2>&1; then ` +
             `hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true; ` +
-            `sleep 0.03; `;
+            `elif command -v ydotool >/dev/null 2>&1; then ` +
+            `YDOTOOL_SOCKET="\${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}" ydotool key 148 >/dev/null 2>&1 || true; ` +
+            `fi; sleep 0.03; `;
     }
 
     function grimRestoreCursorEpilogue() {
-        return ` if [ "\${_prev_invis:-false}" = "true" ]; then ` +
+        return ` if hyprctl monitors -j >/dev/null 2>&1; then ` +
+            `if [ "\${_prev_invis:-false}" = "true" ]; then ` +
             `hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true; ` +
-            `else hyprctl eval "hl.config({ cursor = { invisible = false } })" >/dev/null 2>&1 || true; fi; `;
+            `else hyprctl eval "hl.config({ cursor = { invisible = false } })" >/dev/null 2>&1 || true; fi; ` +
+            `elif command -v ydotool >/dev/null 2>&1; then ` +
+            `YDOTOOL_SOCKET="\${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}" ydotool mousemove -x 1 -y 0 >/dev/null 2>&1 || true; ` +
+            `fi; `;
     }
 
     function regionString(x, y, width, height) {
