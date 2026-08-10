@@ -109,55 +109,12 @@ focused_monitor() {
     return 0
 }
 
-# Hide the software cursor for the duration of grim. Moving it "off-screen"
-# (e.g. -9999,-9999) is clamped to the monitor edge (0,0), so the pointer
-# still lands in the capture. cursor.invisible removes it from the frame.
-#
-# wlroots compositors without Hyprland (labwc) have no cursor:invisible.
-# labwc's native HideCursor action does the same (pointer hidden until the
-# next pointer action) and is triggered through a dedicated keybind
-# (XF86Launch1, see labwc/rc.xml) injected via ydotool. The daemon socket
-# here lives at /tmp/.ydotool_socket, not ydotool's $XDG_RUNTIME_DIR default.
-HIDE_CURSOR_KEYCODE=148   # KEY_PROG1 -> XF86Launch1 (labwc/rc.xml)
-
-hide_cursor() {
-    if command -v hyprctl >/dev/null 2>&1 && hyprctl monitors -j >/dev/null 2>&1; then
-        _saved_cursor_invisible="$(hyprctl getoption cursor:invisible -j 2>/dev/null \
-            | jq -r '.bool // false' 2>/dev/null || echo false)"
-        hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true
-        # Let the compositor apply the flag before grim samples the buffer.
-        sleep 0.03
-        return 0
-    fi
-    # labwc / other wlroots: trigger the HideCursor keybind.
-    # Press+release: a bare "ydotool key N" is press-only and leaves the key
-    # stuck down; labwc ignores repeat downs for an already-pressed key, so
-    # the HideCursor keybind would fire only once. Releasing restores the
-    # trigger for the next capture.
-    if command -v ydotool >/dev/null 2>&1; then
-        # stdin from /dev/null: ydotool reads the tty and gets SIGTTIN-stopped
-        # when launched from an interactive shell, silently skipping the inject.
-        YDOTOOL_SOCKET="${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}" ydotool key "${HIDE_CURSOR_KEYCODE}:1" < /dev/null >/dev/null 2>&1 || true
-        YDOTOOL_SOCKET="${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}" ydotool key "${HIDE_CURSOR_KEYCODE}:0" < /dev/null >/dev/null 2>&1 || true
-        sleep 0.03
-    fi
-}
-
-restore_cursor() {
-    if command -v hyprctl >/dev/null 2>&1 && hyprctl monitors -j >/dev/null 2>&1; then
-        if [ "${_saved_cursor_invisible:-false}" = "true" ]; then
-            hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true
-        else
-            hyprctl eval "hl.config({ cursor = { invisible = false } })" >/dev/null 2>&1 || true
-        fi
-        return 0
-    fi
-    # labwc: HideCursor auto-restores on the next pointer action; nudge the
-    # pointer so the cursor reappears immediately.
-    if command -v ydotool >/dev/null 2>&1; then
-        YDOTOOL_SOCKET="${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}" ydotool mousemove -x 1 -y 0 < /dev/null >/dev/null 2>&1 || true
-    fi
-}
+# (Cursor hiding removed — the software cursor is intentionally left
+# visible during grim captures. The previous HideCursor / ydotool approach
+# could leave the pointer stuck-hidden after a capture on labwc, and
+# Hyprland's cursor.invisible was unreliable to save/restore. A visible
+# cursor in a screenshot is a minor cosmetic issue; a stuck-hidden cursor
+# is a real bug.)
 
 # Resolve the bar app path used for freeze/unfreeze IPC. Prefer the live
 # session root; fall back to the OMD checkout when SUMIKA_SHELL_ROOT is unset.
@@ -271,10 +228,8 @@ fast_capture() {
     fi
 
     tmp_file="$(mktemp /tmp/sumika-screenshot.XXXXXX.png)"
-    trap 'restore_cursor; rm -f "$fast_pid_file" "$tmp_file"; unfreeze_bar' EXIT INT TERM
-    hide_cursor
+    trap 'rm -f "$fast_pid_file" "$tmp_file"; unfreeze_bar' EXIT INT TERM
     grim -g "$geometry" "$tmp_file"
-    restore_cursor
     unfreeze_bar
     trap 'rm -f "$fast_pid_file" "$tmp_file"' EXIT INT TERM
 
@@ -318,10 +273,8 @@ capture_monitor() {
     fi
 
     tmp_file="$(mktemp /tmp/sumika-screenshot.XXXXXX.png)"
-    trap 'restore_cursor; rm -f "$tmp_file"' EXIT INT TERM
-    hide_cursor
+    trap 'rm -f "$tmp_file"' EXIT INT TERM
     grim -o "$target_monitor" "$tmp_file"
-    restore_cursor
 
     save_dir=""
     _sumika_cfg="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sumika-shell}"
@@ -454,15 +407,10 @@ launch_direct() {
         snapshot_ts="$(date +%s%3N)"
         if [ -n "$target_monitor" ]; then
             snap_path="${snapshot_dir}/snapshot-${target_monitor}-${snapshot_ts}.png"
-            _snap_trap=1
-            trap 'restore_cursor; _snap_trap=0' INT TERM
-            hide_cursor
             if grim -o "$target_monitor" "$snap_path" > /dev/null 2>&1; then
                 mon_env="$(printf '%s' "$target_monitor" | sed 's/[-.]/_/g')"
                 export "SUMIKA_SNAPSHOT_PATH_${mon_env}=${snap_path}"
             fi
-            restore_cursor
-            [ "$_snap_trap" -eq 0 ] || trap - INT TERM
         fi
     fi
 

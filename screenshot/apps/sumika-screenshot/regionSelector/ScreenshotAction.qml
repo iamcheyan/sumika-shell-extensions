@@ -32,27 +32,9 @@ Singleton {
         return `'${StringUtils.shellSingleQuoteEscape(value)}'`;
     }
 
-    // Shared grim pre/post: hide the software cursor via cursor.invisible.
-    // Do NOT warp the pointer off-screen — Hyprland clamps that to (0,0) and
-    // the arrow ends up in the top-left of every capture.
-    function grimHideCursorPrelude() {
-        return ` _prev_invis=$(hyprctl getoption cursor:invisible -j 2>/dev/null | jq -r '.bool // false' 2>/dev/null || echo false); ` +
-            `if hyprctl monitors -j >/dev/null 2>&1; then ` +
-            `hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true; ` +
-            `elif command -v ydotool >/dev/null 2>&1; then ` +
-            `YDOTOOL_SOCKET="\${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}" ydotool key 148 >/dev/null 2>&1 || true; ` +
-            `fi; sleep 0.03; `;
-    }
-
-    function grimRestoreCursorEpilogue() {
-        return ` if hyprctl monitors -j >/dev/null 2>&1; then ` +
-            `if [ "\${_prev_invis:-false}" = "true" ]; then ` +
-            `hyprctl eval "hl.config({ cursor = { invisible = true } })" >/dev/null 2>&1 || true; ` +
-            `else hyprctl eval "hl.config({ cursor = { invisible = false } })" >/dev/null 2>&1 || true; fi; ` +
-            `elif command -v ydotool >/dev/null 2>&1; then ` +
-            `YDOTOOL_SOCKET="\${YDOTOOL_SOCKET:-/tmp/.ydotool_socket}" ydotool mousemove -x 1 -y 0 >/dev/null 2>&1 || true; ` +
-            `fi; `;
-    }
+    // (Cursor hiding removed — the software cursor is intentionally left
+    // visible during grim captures to avoid leaving the pointer stuck-hidden
+    // on labwc after a capture.)
 
     function regionString(x, y, width, height) {
         const rx = Math.round(x);
@@ -84,9 +66,7 @@ Singleton {
     function getTempCaptureCommand(x, y, width, height, tempPath) {
         const region = regionString(x, y, width, height);
         return ["bash", "-c",
-            grimHideCursorPrelude() +
-            `grim -g ${quote(region)} ${quote(tempPath)}; ` +
-            grimRestoreCursorEpilogue()
+            `grim -g ${quote(region)} ${quote(tempPath)}; `
         ];
     }
 
@@ -137,9 +117,7 @@ Singleton {
             default: {
                 const command = `tmpFile=$(mktemp /tmp/${tempPrefix}.XXXXXX.png) && ` +
                     `trap 'rm -f "$tmpFile"' EXIT && ` +
-                    grimHideCursorPrelude() +
                     `grim -g ${regionArg} "$tmpFile"; _grim_ec=$?; ` +
-                    grimRestoreCursorEpilogue() +
                     ` [ "$_grim_ec" -eq 0 ] || exit "$_grim_ec"; ` +
                     tempFileActionScript("$tmpFile", action, saveDir, false);
                 return ["bash", "-c", command];

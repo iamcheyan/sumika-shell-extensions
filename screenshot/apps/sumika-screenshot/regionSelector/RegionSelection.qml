@@ -462,9 +462,7 @@ PanelWindow {
         running: false
         command: ["bash", "-c",
             `mkdir -p ${ScreenshotAction.quote(root.screenshotDir)} && ` +
-            ScreenshotAction.grimHideCursorPrelude() +
             `grim -o ${ScreenshotAction.quote(root.screen.name)} ${ScreenshotAction.quote(root.screenshotPath)}; _grim_ec=$?; ` +
-            ScreenshotAction.grimRestoreCursorEpilogue() +
             `exit "$_grim_ec"`
         ]
         onExited: (exitCode, exitStatus) => {
@@ -929,7 +927,7 @@ PanelWindow {
     MouseArea {
         id: mouseArea
         anchors.fill: parent
-        cursorShape: root.phase === RegionSelection.Phase.Select ? Qt.BlankCursor : Qt.ArrowCursor
+        cursorShape: Qt.ArrowCursor
         acceptedButtons: root.phase === RegionSelection.Phase.Select ? Qt.LeftButton | Qt.RightButton : Qt.NoButton
         hoverEnabled: root.phase === RegionSelection.Phase.Select
 
