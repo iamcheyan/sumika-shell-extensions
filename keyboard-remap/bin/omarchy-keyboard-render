@@ -88,7 +88,10 @@ CONNECTED_JSON="$("$LIST_KEYBOARDS" 2>/dev/null || printf '[]')"
           | map({"from": .key, "to": .value});
 
         def preset_rows($ids; $overrides):
-          ($ids // []) | map(preset_remaps(.; $overrides)) | add // [];
+          # An override is an explicit user configuration: it implies the
+          # preset is active even if it was never toggled on in the UI.
+          (($ids // []) + (($overrides // {}) | keys)) | unique
+          | map(preset_remaps(.; $overrides)) | add // [];
 
         .devices
         | to_entries[]

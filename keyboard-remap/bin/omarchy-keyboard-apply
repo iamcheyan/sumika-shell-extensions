@@ -38,6 +38,13 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 "$RENDER" >"$GENERATED"
+# Re-run with the true user's config/state homes exported so the render
+# subprocess resolves profiles.json even under sudo (HOME=/root otherwise).
+if [[ "${USER:-}" == "root" && -n "${SUDO_USER:-}" ]]; then
+    SUMIKA_SHELL_CONFIG_HOME="$SUMIKA_CONFIG" \
+    SUMIKA_SHELL_STATE_HOME="$SUMIKA_STATE" \
+    "$RENDER" >"$GENERATED"
+fi
 
 # Surface empty-id warnings on stderr (UI picks up ERROR: lines; this is a softer WARN).
 if grep -q '^## WARN' "$GENERATED"; then

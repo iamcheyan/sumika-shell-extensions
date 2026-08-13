@@ -120,13 +120,49 @@ def is_probable_keyboard(name, main):
         return False
     return True
 
+def list_from_proc():
+    """Fallback for non-Hyprland sessions (labwc/sway/gnome): scan
+    /proc/bus/input/devices directly. Hyprland's main/layout metadata is
+    unavailable, so those fields are empty; keydId comes straight from the
+    vendor:product of each real keyboard."""
+    results = []
+    for dev in parse_input_devices():
+        if not is_real_keyboard(dev):
+            continue
+        name = dev.get('name', '')
+        if not name:
+            continue
+        if not is_probable_keyboard(name, False):
+            continue
+        vendor = dev.get('vendor', '')
+        product = dev.get('product', '')
+        if not (vendor and product):
+            continue
+        slug = normalize_slug(name)
+        is_main = slug == 'at-translated-set-2-keyboard' or (
+            len(results) == 0
+        )
+        results.append({
+            'hyprName': slug,
+            'rawName': name,
+            'displayName': name.strip('- ').replace('-', ' '),
+            'keydId': f"{vendor}:{product}",
+            'layout': '',
+            'main': is_main
+        })
+    return results
+
 def main():
     try:
         res = subprocess.run(['hyprctl', '-j', 'devices'], capture_output=True, text=True, timeout=5)
         data = json.loads(res.stdout)
         keyboards = data.get('keyboards', [])
+        if not keyboards:
+            # hyprctl answered but reported no keyboards — fall through
+            raise ValueError("no keyboards from hyprctl")
     except Exception:
-        print('[]')
+        # No Hyprland IPC (labwc, sway, GNOME, …) — enumerate from /proc.
+        print(json.dumps(list_from_proc()))
         sys.exit(0)
 
     parsed_devices = parse_input_devices()
