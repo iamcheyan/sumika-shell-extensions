@@ -10,6 +10,35 @@ if [[ ! -f "$config_file" ]]; then
   "$helper" set-bindings --translation-binding HANGUL "ALT + A" "code:472" >/dev/null
 fi
 
-exec xdg-terminal-exec \
+# 解析真实编辑器。lab/CI 环境会把 EDITOR/VISUAL 设成 true 之类的占位值，
+# 直接传给终端会变成 no-op（`true config.json` 立即退出），必须过滤并回退。
+resolve_editor() {
+  local cand
+  for cand in "${VISUAL:-}" "${EDITOR:-}"; do
+    [[ -z "$cand" ]] && continue
+    case "$cand" in
+      true|false|:|/bin/true|/usr/bin/true) continue ;;
+    esac
+    if command -v "${cand%% *}" >/dev/null 2>&1; then
+      printf '%s' "$cand"
+      return 0
+    fi
+  done
+  for cand in nvim vim vi; do
+    if command -v "$cand" >/dev/null 2>&1; then
+      printf '%s' "$cand"
+      return 0
+    fi
+  done
+  printf 'vi'
+}
+
+editor="$(resolve_editor)"
+
+xdg-terminal-exec \
   --app-id=io.github.iamcheyan.sumika.editvoiceconfig \
-  "${EDITOR:-vi}" "$config_file"
+  "$editor" "$config_file"
+
+if command -v hyprctl >/dev/null 2>&1; then
+  hyprctl reload >/dev/null 2>&1 || true
+fi

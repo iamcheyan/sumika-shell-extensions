@@ -151,17 +151,25 @@ stop_timer() {
 
 focus_picker() {
   local title="$1"
-  command -v hyprctl >/dev/null 2>&1 || return 0
 
   # Native pickers are separate Wayland clients, so they cannot inherit the
   # terminal's parent relationship. Raise the uniquely titled picker after it
   # maps; the second attempt covers slower GTK/KDE cold starts.
-  (
-    sleep 0.12
-    hyprctl dispatch focuswindow "title:^${title}$" >/dev/null 2>&1 || true
-    sleep 0.28
-    hyprctl dispatch focuswindow "title:^${title}$" >/dev/null 2>&1 || true
-  ) &
+  if command -v hyprctl >/dev/null 2>&1; then
+    (
+      sleep 0.12
+      hyprctl dispatch focuswindow "title:^${title}$" >/dev/null 2>&1 || true
+      sleep 0.28
+      hyprctl dispatch focuswindow "title:^${title}$" >/dev/null 2>&1 || true
+    ) &
+  elif command -v wlrctl >/dev/null 2>&1 && pgrep -x labwc >/dev/null 2>&1; then
+    (
+      sleep 0.12
+      wlrctl toplevel focus "title:$title" >/dev/null 2>&1 || true
+      sleep 0.28
+      wlrctl toplevel focus "title:$title" >/dev/null 2>&1 || true
+    ) &
+  fi
 }
 
 start_timer() {
