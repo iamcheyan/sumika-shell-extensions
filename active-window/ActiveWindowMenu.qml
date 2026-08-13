@@ -8,8 +8,16 @@ import Quickshell.Wayland
 /**
  * Context menu for the active-window title in the bar.
  *
- * Minimize / maximize / close go through the compositor-agnostic
- * zwlr_foreign_toplevel_management_v1 API (works on labwc and Hyprland).
+ * The menu adapts to the compositor:
+ *  - labwc:   zwlr_foreign_toplevel_management_v1 handles minimize /
+ *             maximize / close (labwc has no IPC and no per-window
+ *             float/pin concept surfaced here).
+ *  - Hyprland: Hyprland has no usable minimize (windows cannot be
+ *             re-raised from the bar), so Minimize/Maximize are replaced
+ *             by window ops that actually matter under tiling:
+ *             Toggle Floating, Fullscreen, Pop Out (float+pin+top),
+ *             Move to Scratchpad. All target the clicked window by
+ *             address (bar clicks do not steal toplevel focus).
  *
  * "Force Quit" has no wlr-ftm kill request and labwc has no IPC, so we
  * cannot get the toplevel's PID from the compositor. Instead we map the
@@ -25,6 +33,15 @@ ContextMenuWindow {
     /// shifts while the menu is open.
     required property var targetToplevel
 
+    readonly property bool isHyprland: Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE") !== ""
+
+    /// "address:0x…" selector for hyprctl dispatch — targets the clicked
+    /// window regardless of which window is focused now.
+    readonly property string targetAddress: {
+        const addr = root.targetToplevel?.address ?? "";
+        return addr ? "address:" + addr : "";
+    }
+
     /// comm-name candidate derived from the appId (org.kde.ark → ark).
     readonly property string targetProcessName: {
         const appId = (root.targetToplevel?.appId ?? "").trim();
@@ -33,13 +50,25 @@ ContextMenuWindow {
         return appId.split(".").pop().replace(/'/g, "");
     }
 
+    /// hyprctl dispatch with the clicked window's address (Lua syntax).
+    function hyprDispatch(lua) {
+        const addr = root.targetAddress;
+        if (!addr)
+            return;
+        // hyprctl is Lua-driven in this build; the raw `dispatch` form
+        // without address targets the focused window, which may differ
+        // from the clicked one.
+        Quickshell.execDetached(["hyprctl", "dispatch", lua]);
+    }
+
     function forceQuit() {
         const proc = root.targetProcessName;
         if (!proc)
             return;
-        if (Quickshell.env("HYPRLAND_INSTANCE_SIGNATURE")) {
-            // Window-level kill for the focused toplevel. Bar clicks do not
-            // steal toplevel focus, so this still hits the menu's window.
+        if (root.isHyprland) {
+            // Window-level kill for the clicked toplevel. Bar clicks do not
+            // steal toplevel focus, so killactive still hits the menu's
+            // window; fall back to address-scoped close for reliability.
             Quickshell.execDetached(["hyprctl", "dispatch", "killactive"]);
             return;
         }
@@ -67,7 +96,9 @@ ContextMenuWindow {
         }
     }
 
+    // ── labwc: minimize / maximize (Hyprland hides these) ──────────────
     ContextMenuItem {
+        visible: !root.isHyprland
         nerdIcon: NerdIconMap.windowMinimize
         labelText: "Minimize"
         shortcutKey: "M"
@@ -80,6 +111,7 @@ ContextMenuWindow {
     }
 
     ContextMenuItem {
+        visible: !root.isHyprland
         nerdIcon: NerdIconMap.windowMaximize
         labelText: "Maximize"
         shortcutKey: "X"
@@ -87,6 +119,60 @@ ContextMenuWindow {
             console.log("[AWMenu] item=maximize target=", root.targetToplevel?.appId ?? "null");
             if (root.targetToplevel)
                 root.targetToplevel.maximized = !root.targetToplevel.maximized;
+            root.close();
+        }
+    }
+
+    // ── Hyprland: window ops that matter under tiling ──────────────────
+    ContextMenuItem {
+        visible: root.isHyprland
+        nerdIcon: "\uDB81\uDC37" // mdi-flip-to-front U+F0437 — float/tile glyph
+        labelText: "Toggle Floating"
+        shortcutKey: "F"
+        onClicked: {
+            console.log("[AWMenu] item=floating target=", root.targetToplevel?.appId ?? "null");
+            root.hyprDispatch(`hl.dsp.window.float({ window = "${root.targetAddress}", action = "toggle" })`);
+            root.close();
+        }
+    }
+
+    ContextMenuItem {
+        visible: root.isHyprland
+        nerdIcon: "\uDB80\uDDB4" // mdi-fullscreen U+F01B4
+        labelText: "Fullscreen"
+        shortcutKey: "S"
+        onClicked: {
+            console.log("[AWMenu] item=fullscreen target=", root.targetToplevel?.appId ?? "null");
+            root.hyprDispatch(`hl.dsp.window.fullscreen({ window = "${root.targetAddress}", mode = "fullscreen" })`);
+            root.close();
+        }
+    }
+
+    ContextMenuItem {
+        visible: root.isHyprland
+        nerdIcon: NerdIconMap.pushPin
+        labelText: "Pop Out (Float & Pin)"
+        shortcutKey: "P"
+        onClicked: {
+            console.log("[AWMenu] item=popout target=", root.targetToplevel?.appId ?? "null");
+            // Mirrors bin/sumika-hyprland-window-pop: float, resize, center,
+            // pin, raise to top.
+            root.hyprDispatch(`hl.dsp.window.float({ window = "${root.targetAddress}", action = "toggle" })`);
+            root.hyprDispatch(`hl.dsp.window.center({ window = "${root.targetAddress}" })`);
+            root.hyprDispatch(`hl.dsp.window.pin({ window = "${root.targetAddress}" })`);
+            root.hyprDispatch(`hl.dsp.window.alter_zorder({ window = "${root.targetAddress}", mode = "top" })`);
+            root.close();
+        }
+    }
+
+    ContextMenuItem {
+        visible: root.isHyprland
+        nerdIcon: "\uDB80\uDC8D" // mdi-inbox-arrow-down U+F008D — stash to scratchpad
+        labelText: "Move to Scratchpad"
+        shortcutKey: "D"
+        onClicked: {
+            console.log("[AWMenu] item=scratchpad target=", root.targetToplevel?.appId ?? "null");
+            root.hyprDispatch(`hl.dsp.window.move({ window = "${root.targetAddress}", workspace = "special:scratchpad", follow = false })`);
             root.close();
         }
     }
@@ -119,7 +205,8 @@ ContextMenuWindow {
     }
 
     Component.onCompleted: {
-        console.log("[AWMenu] opened target=", root.targetToplevel?.appId ?? "null");
+        console.log("[AWMenu] opened target=", root.targetToplevel?.appId ?? "null",
+            "hyprland=", root.isHyprland);
     }
     Component.onDestruction: {
         console.log("[AWMenu] destroyed");

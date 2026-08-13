@@ -13,6 +13,10 @@ Item {
     property int titleAreaWidth: 280
     property bool hideOnShortScreen: true
 
+    // Content max width: titleAreaWidth minus left/right padding (10+10),
+    // the 14px icon, and the 6px spacing. The text elides past this.
+    readonly property real maxContentWidth: titleAreaWidth - 20 - 14 - 6
+
     // Compositor-agnostic focused-window lookup via zwlr_foreign_toplevel_management_v1
     // (labwc 0.20+, Hyprland, sway, …). `activated` is the wlr-ftm focus state;
     // `screens` limits the match to this bar's output on multi-monitor setups.
@@ -37,7 +41,15 @@ Item {
     /// user clicked on, not whatever becomes active while the menu is open.
     property var menuTarget: null
 
-    implicitWidth: titleAreaWidth
+    // Width follows content (icon + text + padding) so the pill hugs the
+    // label like the workspaces/applications buttons, capped at
+    // titleAreaWidth so a long window title elides instead of stretching
+    // the bar. Computed explicitly from the text's natural width — do NOT
+    // read it from contentRow.implicitWidth: contentRow is anchored to
+    // parent, creating a circular binding that collapses the width.
+    implicitWidth: Math.min(
+        (10 + 10) + 14 + 6 + titleText.implicitWidth,
+        titleAreaWidth)
     implicitHeight: 28
     visible: !root.hideOnShortScreen || root.useShortenedForm === 0
 
@@ -133,7 +145,10 @@ Item {
     RippleButton {
         id: titleButton
         anchors.fill: parent
-        buttonRadius: 6
+        // Match the pill-shaped hover of BarTextButton (workspaces /
+        // applications): full-height radius + same 0.10 white fill, so
+        // every left-bar button's hover looks identical.
+        buttonRadius: parent.height / 2
         colBackground: "transparent"
         colBackgroundHover: Qt.rgba(1, 1, 1, 0.10)
         colBackgroundToggled: Qt.rgba(1, 1, 1, 0.18)
@@ -159,7 +174,10 @@ Item {
     }
 
     RowLayout {
+        id: contentRow
         anchors.fill: parent
+        anchors.leftMargin: 10
+        anchors.rightMargin: 10
         spacing: 6
 
         Item {
@@ -192,8 +210,13 @@ Item {
         }
 
         StyledText {
+            id: titleText
             Layout.fillWidth: true
             Layout.alignment: Qt.AlignVCenter
+            // fillWidth lets the text shrink/elide when root is capped at
+            // titleAreaWidth; maximumWidth caps its share at the content
+            // budget (280 - padding 20 - icon 14 - spacing 6 = 240).
+            Layout.maximumWidth: root.maxContentWidth
             font.pixelSize: 12
             font.variableAxes: ({
                 "wght": 500,
