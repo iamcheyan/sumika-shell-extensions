@@ -24,16 +24,27 @@ run_tui() {
   exec "$MUSUBI_BIN"
 }
 
-if command -v foot >/dev/null 2>&1 && foot --version >/dev/null 2>&1; then
-  exec setsid uwsm-app -- foot --app-id="$APP_ID" -e "$MUSUBI_BIN"
+if command -v uwsm-app >/dev/null 2>&1; then
+  if command -v foot >/dev/null 2>&1 && foot --version >/dev/null 2>&1; then
+    exec setsid uwsm-app -- foot --app-id="$APP_ID" -e "$MUSUBI_BIN"
+  fi
+
+  if command -v kitty >/dev/null 2>&1; then
+    exec setsid uwsm-app -- kitty --class="$APP_ID" -e "$MUSUBI_BIN"
+  fi
+
+  if command -v alacritty >/dev/null 2>&1; then
+    exec setsid uwsm-app -- alacritty --class "$APP_ID" -e "$MUSUBI_BIN"
+  fi
 fi
 
+# No uwsm-app (or it exists but no terminal did): run without the session
+# wrapper — a bare TUI in this context is better than a dead launcher.
+if command -v foot >/dev/null 2>&1; then
+  exec setsid foot --app-id="$APP_ID" -e "$MUSUBI_BIN"
+fi
 if command -v kitty >/dev/null 2>&1; then
-  exec setsid uwsm-app -- kitty --class="$APP_ID" -e "$MUSUBI_BIN"
-fi
-
-if command -v alacritty >/dev/null 2>&1; then
-  exec setsid uwsm-app -- alacritty --class "$APP_ID" -e "$MUSUBI_BIN"
+  exec setsid kitty --class="$APP_ID" -e "$MUSUBI_BIN"
 fi
 
 run_tui

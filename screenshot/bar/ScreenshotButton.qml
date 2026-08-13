@@ -26,6 +26,12 @@ Item {
             if (!running)
                 root.recordingActive = false;
         }
+        // Kick off the actual check; the Process exits after one run and is
+        // re-armed by the next tick.
+        onTriggered: {
+            if (!recordCheckProc.running)
+                recordCheckProc.running = true;
+        }
     }
     Process {
         id: recordCheckProc
@@ -92,6 +98,9 @@ Item {
         z: 10
         SequentialAnimation on opacity {
             loops: Animation.Infinite
+            // `Animation on` starts eagerly; pause while the dot is hidden
+            // so the bar doesn't tick repaints for an invisible indicator.
+            paused: !visible
             NumberAnimation { from: 1; to: 0.25; duration: 700 }
             NumberAnimation { from: 0.25; to: 1; duration: 700 }
         }

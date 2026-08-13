@@ -19,7 +19,8 @@ PopupColumn {
         title: "VM Settings"
         subtitle: "Install, run and manage Windows"
         onClicked: {
-            root.close();
+            // The shared BarStatusPopup closes itself on focus loss /
+            // dismiss; PopupColumn has no close() and no root id exists.
             Quickshell.execDetached(["sumika-launch-settings-windows-tui"]);
         }
     }

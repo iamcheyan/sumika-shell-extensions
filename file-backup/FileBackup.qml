@@ -17,14 +17,14 @@ Singleton {
     property bool hasConnection: false
 
     readonly property string shareDir: FileUtils.trimFileProtocol(Qt.resolvedUrl(".")) + "/bin"
-    readonly property string dataDir: `${FileUtils.trimFileProtocol(Directories.config)}/sumika-shell/file-backup`
+    readonly property string dataDir: `${Directories.sumikaStateHome}/file-backup`
 
 
     // ── Status polling ──
     Process {
         id: statusProc
 
-        command: ["sh", "-c", `${root.shareDir}/sumika-backup status`]
+        command: [`${root.shareDir}/sumika-backup`, "status"]
 
         stdout: StdioCollector {
             onStreamFinished: {

@@ -1,5 +1,6 @@
 import qs
 import qs.modules.common
+import qs.modules.keyboardremap
 import qs.modules.common.widgets
 import qs.modules.settings
 import QtQuick

@@ -1,5 +1,6 @@
 import qs.modules.bar
 import qs.modules.common
+import qs.modules.keyboardremap
 import qs.modules.common.widgets
 import qs.modules.common.functions
 import QtQuick
@@ -9,15 +10,10 @@ import Quickshell
 PopupColumn {
     id: keyboardPanel
 
-    KeyboardRemap {
-        id: kr
-        visible: false
-    }
-
     function stateLabel() {
-        if (kr.state === "setup") return "Setup needed";
-        if (!kr.keydReady) return "keyd not running";
-        if (kr.selectedDeviceId) return "Ready";
+        if (KeyboardRemap.state === "setup") return "Setup needed";
+        if (!KeyboardRemap.keydReady) return "keyd not running";
+        if (KeyboardRemap.selectedDeviceId) return "Ready";
         return "No device";
     }
     function tone() {
@@ -34,12 +30,12 @@ PopupColumn {
         tone: keyboardPanel.tone()
     }
 
-    PopupInfoRow { label: "Device"; value: kr.selectedDeviceId || "--"; valueColor: kr.selectedDeviceId ? TuiStyle.fg : TuiStyle.dim }
-    PopupInfoRow { label: "Keyd"; value: kr.keydReady ? "Running" : "Not ready"; valueColor: kr.keydReady ? TuiStyle.success : TuiStyle.danger }
+    PopupInfoRow { label: "Device"; value: KeyboardRemap.selectedDeviceId || "--"; valueColor: KeyboardRemap.selectedDeviceId ? TuiStyle.fg : TuiStyle.dim }
+    PopupInfoRow { label: "Keyd"; value: KeyboardRemap.keydReady ? "Running" : "Not ready"; valueColor: KeyboardRemap.keydReady ? TuiStyle.success : TuiStyle.danger }
     PopupInfoRow {
         label: "Profile"
-        value: kr.selectedProfile?.displayName || "--"
-        valueColor: kr.selectedProfile ? TuiStyle.accent : TuiStyle.dim
+        value: KeyboardRemap.selectedProfile?.displayName || "--"
+        valueColor: KeyboardRemap.selectedProfile ? TuiStyle.accent : TuiStyle.dim
         showDivider: false
     }
 
@@ -47,7 +43,6 @@ PopupColumn {
         Layout.fillWidth: true
         label: "Keyboard settings…"
         onClicked: {
-            root.close();
             Quickshell.execDetached(["sumika-launch-keyboard-tui"]);
         }
     }

@@ -12,28 +12,23 @@ import Quickshell
 PopupColumn {
     id: voicePanel
 
-    VoiceInput {
-        id: vi
-        visible: false
-    }
-
     function stateLabel() {
-        if (vi.state === "setup") return "Not Installed";
-        if (vi.state === "idle") return "Ready";
-        if (vi.state === "recording")
-            return vi.activeMode === "translation"
-                ? `Recording · translate to ${vi.translationTargetLanguage}`
+        if (VoiceInput.state === "setup") return "Not Installed";
+        if (VoiceInput.state === "idle") return "Ready";
+        if (VoiceInput.state === "recording")
+            return VoiceInput.activeMode === "translation"
+                ? `Recording · translate to ${VoiceInput.translationTargetLanguage}`
                 : "Recording";
-        if (vi.state === "transcribing") return "Transcribing";
-        if (vi.state === "translating") return `Translating to ${vi.translationTargetLanguage}`;
-        if (vi.state === "success") return "Transcription Success";
-        if (vi.state === "error") return "Error";
-        return vi.state;
+        if (VoiceInput.state === "transcribing") return "Transcribing";
+        if (VoiceInput.state === "translating") return `Translating to ${VoiceInput.translationTargetLanguage}`;
+        if (VoiceInput.state === "success") return "Transcription Success";
+        if (VoiceInput.state === "error") return "Error";
+        return VoiceInput.state;
     }
     function tone() {
-        if (vi.state === "idle" || vi.state === "success") return TuiStyle.success;
-        if (vi.state === "recording" || vi.state === "error") return TuiStyle.danger;
-        if (vi.state === "transcribing" || vi.state === "translating" || vi.state === "setup") return TuiStyle.warning;
+        if (VoiceInput.state === "idle" || VoiceInput.state === "success") return TuiStyle.success;
+        if (VoiceInput.state === "recording" || VoiceInput.state === "error") return TuiStyle.danger;
+        if (VoiceInput.state === "transcribing" || VoiceInput.state === "translating" || VoiceInput.state === "setup") return TuiStyle.warning;
         return TuiStyle.muted;
     }
 
@@ -61,22 +56,22 @@ PopupColumn {
 
             PopupInfoRow {
                 label: "Model"
-                value: vi.modelSizeMB > 0 ? `SenseVoice Small (${vi.modelSizeMB} MB)` : "Missing"
-                valueColor: vi.modelSizeMB > 0 ? TuiStyle.success : TuiStyle.danger
+                value: VoiceInput.modelSizeMB > 0 ? `SenseVoice Small (${VoiceInput.modelSizeMB} MB)` : "Missing"
+                valueColor: VoiceInput.modelSizeMB > 0 ? TuiStyle.success : TuiStyle.danger
                 showDivider: true
             }
 
             PopupInfoRow {
                 label: "Daemon Status"
-                value: vi.daemonRunning ? "Active (RAM Loaded)" : "Standby"
-                valueColor: vi.daemonRunning ? TuiStyle.success : TuiStyle.dim
+                value: VoiceInput.daemonRunning ? "Active (RAM Loaded)" : "Standby"
+                valueColor: VoiceInput.daemonRunning ? TuiStyle.success : TuiStyle.dim
                 showDivider: true
             }
 
             PopupInfoRow {
                 label: "Virtual Env"
-                value: vi.state === "setup" ? "Missing" : "Ready"
-                valueColor: vi.state === "setup" ? TuiStyle.danger : TuiStyle.success
+                value: VoiceInput.state === "setup" ? "Missing" : "Ready"
+                valueColor: VoiceInput.state === "setup" ? TuiStyle.danger : TuiStyle.success
                 showDivider: false
             }
         }
@@ -89,7 +84,7 @@ PopupColumn {
         color: TuiStyle.panel
         radius: TuiStyle.radius
         clip: true
-        visible: vi.state !== "setup"
+        visible: VoiceInput.state !== "setup"
 
         ColumnLayout {
             id: debugCol
@@ -107,15 +102,15 @@ PopupColumn {
                     Layout.preferredWidth: 48
                     Layout.preferredHeight: 48
                     radius: 24
-                    color: vi.state === "recording" ? TuiStyle.danger : recMouse.containsMouse ? TuiStyle.surfaceHover : TuiStyle.surfaceRaised
+                    color: VoiceInput.state === "recording" ? TuiStyle.danger : recMouse.containsMouse ? TuiStyle.surfaceHover : TuiStyle.surfaceRaised
                     border.width: 1
-                    border.color: vi.state === "recording" ? TuiStyle.danger : TuiStyle.line
+                    border.color: VoiceInput.state === "recording" ? TuiStyle.danger : TuiStyle.line
 
                     NerdIcon {
                         anchors.centerIn: parent
                         iconSize: 20
-                        text: vi.state === "recording" ? NerdIconMap.stop : NerdIconMap.mic
-                        color: vi.state === "recording" ? TuiStyle.fg : TuiStyle.fg
+                        text: VoiceInput.state === "recording" ? NerdIconMap.stop : NerdIconMap.mic
+                        color: VoiceInput.state === "recording" ? TuiStyle.fg : TuiStyle.fg
                     }
 
                     MouseArea {
@@ -123,12 +118,12 @@ PopupColumn {
                         anchors.fill: parent
                         hoverEnabled: true
                         cursorShape: Qt.PointingHandCursor
-                        enabled: vi.state === "idle" || vi.state === "recording"
+                        enabled: VoiceInput.state === "idle" || VoiceInput.state === "recording"
                         onClicked: {
-                            if (vi.state === "recording") {
-                                vi.stopRecording();
+                            if (VoiceInput.state === "recording") {
+                                VoiceInput.stopRecording();
                             } else {
-                                vi.testRecording();
+                                VoiceInput.testRecording();
                             }
                         }
                     }
@@ -140,11 +135,11 @@ PopupColumn {
 
                     StyledText {
                         text: {
-                            if (vi.state === "recording") return `Recording ${vi.recordingDuration.toFixed(1)}s`;
-                            if (vi.state === "transcribing") return "Transcribing…";
-                            if (vi.state === "translating") return `Translating to ${vi.translationTargetLanguage}…`;
-                            if (vi.state === "success") return "Transcription ready";
-                            if (vi.state === "error") return "Error";
+                            if (VoiceInput.state === "recording") return `Recording ${VoiceInput.recordingDuration.toFixed(1)}s`;
+                            if (VoiceInput.state === "transcribing") return "Transcribing…";
+                            if (VoiceInput.state === "translating") return `Translating to ${VoiceInput.translationTargetLanguage}…`;
+                            if (VoiceInput.state === "success") return "Transcription ready";
+                            if (VoiceInput.state === "error") return "Error";
                             return "Tap mic to test 3s";
                         }
                         font.family: Appearance.font.family.main
@@ -155,13 +150,13 @@ PopupColumn {
 
                     StyledText {
                         Layout.fillWidth: true
-                        text: vi.lastError || vi.lastTranscription || "—"
+                        text: VoiceInput.lastError || VoiceInput.lastTranscription || "—"
                         wrapMode: Text.Wrap
                         maximumLineCount: 2
                         elide: Text.ElideRight
                         font.family: Appearance.font.family.main
                         font.pixelSize: Appearance.font.pixelSize.smaller
-                        color: vi.lastError ? TuiStyle.danger : TuiStyle.fg
+                        color: VoiceInput.lastError ? TuiStyle.danger : TuiStyle.fg
                     }
                 }
             }
@@ -172,22 +167,22 @@ PopupColumn {
 
                 PopupIconButton {
                     label: "COPY TEXT"
-                    enabledState: vi.lastTranscription.length > 0
+                    enabledState: VoiceInput.lastTranscription.length > 0
                     onClicked: {
                         Quickshell.execDetached(["bash", "-c",
-                            `printf '%s' '${StringUtils.shellSingleQuoteEscape(vi.lastTranscription)}' | wl-copy`]);
-                        vi.notify("Copied", vi.lastTranscription, "edit-copy");
+                            `printf '%s' '${StringUtils.shellSingleQuoteEscape(VoiceInput.lastTranscription)}' | wl-copy`]);
+                        VoiceInput.notify("Copied", VoiceInput.lastTranscription, "edit-copy");
                     }
                 }
                 PopupIconButton {
                     label: "PASTE"
-                    enabledState: vi.lastTranscription.length > 0
+                    enabledState: VoiceInput.lastTranscription.length > 0
                     onClicked: {
                         Quickshell.execDetached(["bash", "-c",
                             `payload=$(mktemp); trap 'rm -f "$payload"' EXIT; ` +
-                            `printf '%s' '${StringUtils.shellSingleQuoteEscape(vi.lastTranscription)}' > "$payload" && ` +
+                            `printf '%s' '${StringUtils.shellSingleQuoteEscape(VoiceInput.lastTranscription)}' > "$payload" && ` +
                             `wl-copy < "$payload" && SUMIKA_PASTE_SOURCE=voice-manual ` +
-                            `'${vi.shareDir}/sumika-paste-at-cursor' --file "$payload" auto`]);
+                            `'${VoiceInput.shareDir}/sumika-paste-at-cursor' --file "$payload" auto`]);
                     }
                 }
             }
@@ -201,7 +196,7 @@ PopupColumn {
         color: TuiStyle.panel
         radius: TuiStyle.radius
         clip: true
-        visible: vi.history.length > 0
+        visible: VoiceInput.history.length > 0
 
         ColumnLayout {
             id: historyList
@@ -210,7 +205,7 @@ PopupColumn {
             spacing: 4
 
             StyledText {
-                text: `History (${vi.history.length})`
+                text: `History (${VoiceInput.history.length})`
                 font.family: Appearance.font.family.monospace
                 font.pixelSize: Appearance.font.pixelSize.smaller
                 font.weight: Font.Bold
@@ -220,7 +215,7 @@ PopupColumn {
             ColumnLayout {
                 spacing: 0
                 Repeater {
-                    model: vi.history.slice(0, 5)
+                    model: VoiceInput.history.slice(0, 5)
                     delegate: Rectangle {
                         required property var modelData
                         Layout.fillWidth: true
@@ -272,12 +267,12 @@ PopupColumn {
         spacing: 8
 
         PopupIconButton {
-            label: vi.state === "setup" ? "Setup" : "Test"
+            label: VoiceInput.state === "setup" ? "Setup" : "Test"
             onClicked: {
-                if (vi.state === "setup") {
-                    vi.setup();
+                if (VoiceInput.state === "setup") {
+                    VoiceInput.setup();
                 } else {
-                    vi.testRecording();
+                    VoiceInput.testRecording();
                 }
                 GlobalStates.barPopupType = "";
             }
@@ -285,15 +280,15 @@ PopupColumn {
         PopupIconButton {
             label: "Check State"
             onClicked: {
-                vi.checkState();
-                vi.refreshModelInfo();
-                vi.refreshDaemonStatus();
+                VoiceInput.checkState();
+                VoiceInput.refreshModelInfo();
+                VoiceInput.refreshDaemonStatus();
             }
         }
         PopupIconButton {
             label: "Clear History"
-            visible: vi.history.length > 0
-            onClicked: vi.clearHistory()
+            visible: VoiceInput.history.length > 0
+            onClicked: VoiceInput.clearHistory()
         }
     }
 

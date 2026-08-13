@@ -1,3 +1,5 @@
 #!/usr/bin/env bash
 set -euo pipefail
-exec sumika-launch-tui sumika-settings-tui wallpaper
+# Launch the wallpaper TUI that lives in this extension's bin/ (there is no
+# core sumika-settings-tui binary — the old exec target never existed).
+exec sumika-launch-tui "${0%/*}/sumika-settings-wallpaper-tui"
