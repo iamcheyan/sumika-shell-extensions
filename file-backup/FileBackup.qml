@@ -55,8 +55,9 @@ Singleton {
     // ── Public API ──
 
     function openSettings() {
-        // Open the settings page via Quickshell's settings navigation
-        Quickshell.execDetached(["musubi"]);
+        // Musubi is a terminal TUI: launching the bare binary without a
+        // terminal makes it exit immediately. Use the extension launcher.
+        Quickshell.execDetached(["sumika-launch-musubi-tui"]);
     }
 
     function refreshStatus() {

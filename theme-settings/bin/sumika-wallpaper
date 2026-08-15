@@ -7,6 +7,12 @@ MODE_FILE="$STATE_DIR/mode"
 CURRENT_SOURCE_FILE="$STATE_DIR/current_source"
 INTERVAL_FILE="$STATE_DIR/interval"
 INTERVAL_SEC="${SUMIKA_WALLPAPER_INTERVAL_SEC:-$(cat "$INTERVAL_FILE" 2>/dev/null || printf '3600')}"
+# Transient systemd units (rotation timer, renderer) do not inherit the
+# session PATH, which is what makes sibling extension binaries like
+# sumika-theme-bg-set resolvable in an interactive shell. Bootstrap this
+# script's own directory so sibling binaries always resolve.
+SELF_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+export PATH="$SELF_DIR:$PATH"
 UNIT_NAME="sumika-wallpaper-random"
 RENDER_UNIT_NAME="sumika-wallpaper-renderer"
 RENDER_LOG="$STATE_DIR/renderer.log"

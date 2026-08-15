@@ -41,6 +41,11 @@ ext_bin = os.path.join(os.path.dirname(os.path.abspath(__file__)))
 if ext_bin not in sys.path:
     sys.path.insert(0, ext_bin)
 
+# Extension-owned backend script. run_cmd resolves bare names against the
+# REPO bin/, where this script does not exist — always call it by its
+# absolute path so status/apply/fnmode work regardless of SUMIKA_SHELL_ROOT.
+_KBD_CMD = os.path.join(ext_bin, "sumika-settings-keyboard")
+
 # ── keyboard layout for visual key picker ────────────────────────────────
 KEYBOARD_ROWS = [
     # Row 0: F13-F24 (98 characters total)
@@ -205,7 +210,9 @@ class Model(S.StatusModel):
         config_home = os.environ.get("SUMIKA_SHELL_CONFIG_HOME") or \
             os.path.join(os.environ.get("XDG_CONFIG_HOME", os.path.expanduser("~/.config")), "sumika-shell")
         new_path = os.path.join(config_home, "keyboard-remap", "profiles.json")
-        legacy_path = os.path.join(S.SUMIKA_SHELL_ROOT, "keyboard-remap", "profiles.json")
+        # Legacy layout: next to this extension, not under the session-wide
+        # SUMIKA_SHELL_ROOT (that points at the core repo).
+        legacy_path = os.path.join(_EXT_ROOT, "keyboard-remap", "profiles.json") if _EXT_ROOT else ""
         # Read from new path if it exists, else fall back to legacy
         if os.path.isfile(new_path):
             return new_path
@@ -218,7 +225,7 @@ class Model(S.StatusModel):
             with open(profiles_path) as f:
                 self.profiles = json.load(f)
         except (FileNotFoundError, json.JSONDecodeError):
-            legacy = os.path.join(S.SUMIKA_SHELL_ROOT, "keyboard-remap", "profiles.json")
+            legacy = os.path.join(_EXT_ROOT, "keyboard-remap", "profiles.json") if _EXT_ROOT else ""
             try:
                 with open(legacy) as f:
                     self.profiles = json.load(f)
@@ -301,9 +308,9 @@ class Model(S.StatusModel):
                 self.fnmode_value = data.get("value", 0)
             except Exception:
                 self.fnmode_available = False
-        S.run_cmd_bg("sumika-settings-keyboard", "status", callback=rc.cb(on_status))
-        S.run_cmd_bg(os.path.join(_EXT_ROOT, "bin", "omarchy-keyboard-list"), callback=rc.cb(on_devices))
-        S.run_cmd_bg("sumika-settings-keyboard", "fnmode-status", callback=rc.cb(on_fnmode))
+        S.run_cmd_bg(_KBD_CMD, "status", callback=rc.cb(on_status))
+        S.run_cmd_bg(os.path.join(ext_bin, "omarchy-keyboard-list"), callback=rc.cb(on_devices))
+        S.run_cmd_bg(_KBD_CMD, "fnmode-status", callback=rc.cb(on_fnmode))
         self.append_log("$ refresh")
 
     def run_action(self, action):
@@ -327,7 +334,7 @@ class Model(S.StatusModel):
                     self.append_log("fn mode updated")
             self.dirty = True
             self.refresh()
-        S.run_cmd_bg("sumika-settings-keyboard", action, callback=_cb)
+        S.run_cmd_bg(_KBD_CMD, action, callback=_cb)
 
     def set_fnmode(self, mode):
         """Cycle fn key mode by calling sumika-settings-keyboard fnmode-set <mode>."""
@@ -354,9 +361,9 @@ class Model(S.StatusModel):
                     except Exception:
                         pass
                     self.dirty = True
-                S.run_cmd_bg("sumika-settings-keyboard", "fnmode-status", callback=on_fnmode)
+                S.run_cmd_bg(_KBD_CMD, "fnmode-status", callback=on_fnmode)
             self.dirty = True
-        S.run_cmd_bg("sumika-settings-keyboard", "fnmode-set", mode, callback=_cb)
+        S.run_cmd_bg(_KBD_CMD, "fnmode-set", mode, callback=_cb)
 
     def cycle_fnmode(self):
         next_mode = "media"
@@ -550,7 +557,7 @@ class Model(S.StatusModel):
                 self.pending_changes = False
             self.dirty = True
             self.refresh()
-        S.run_cmd_bg("sumika-settings-keyboard", "apply", callback=_cb)
+        S.run_cmd_bg(_KBD_CMD, "apply", callback=_cb)
 
     def cancel_changes(self):
         "Revert all changes to the last applied snapshot."
@@ -1239,6 +1246,11 @@ def handle_key(stdscr, model, key):
         delta, model.scroll_offset = r
         model.dirty = True
         return True
+
+    # Unhandled key: keep running. run_tui_loop treats a falsy return as
+    # "exit", so falling off the end here would close the TUI on any key
+    # without an explicit branch (Tab, h/l/g, 'a' with no pending changes…).
+    return True
 
 
 # ── main ─────────────────────────────────────────────────────────────────

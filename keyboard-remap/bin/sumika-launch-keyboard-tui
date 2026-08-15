@@ -1,44 +1,29 @@
 #!/usr/bin/env bash
-# sumika-launch-keyboard-tui — Launch the keyboard remap settings TUI
-# Follows the same unified TUI framework as wifi/bluetooth.
-
+# sumika-launch-keyboard-tui — Launch the keyboard remap settings TUI.
+#
+# Delegates to the unified sumika-launch-tui: the app-id is derived from the
+# TUI filename (io.github.iamcheyan.sumika.sumikasettingskeyboardtui) and the
+# terminal fallback chain exists in exactly one place. Do not hand-roll
+# another fallback chain with a hardcoded app-id here.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-KEYBOARD_TUI="${SCRIPT_DIR}/sumika-settings-keyboard-tui"
+TUI="${SCRIPT_DIR}/sumika-settings-keyboard-tui"
 
-if [[ ! -f "$KEYBOARD_TUI" ]]; then
-  echo "sumika-settings-keyboard-tui not found at $KEYBOARD_TUI" >&2
+if [[ ! -f "$TUI" ]]; then
+  echo "sumika-settings-keyboard-tui not found at $TUI" >&2
   exit 1
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 not found" >&2
-  exit 1
+if _launcher="$(command -v sumika-launch-tui)"; then
+  exec "$_launcher" "$TUI"
 fi
 
-run_tui() {
-  exec python3 "$KEYBOARD_TUI"
-}
-
-# Prefer xdg-terminal-exec with a dedicated app-id for Hyprland floating rules.
-if command -v uwsm-app >/dev/null 2>&1 && command -v xdg-terminal-exec >/dev/null 2>&1; then
-  exec setsid uwsm-app -- xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.keyboardtui -e python3 "$KEYBOARD_TUI"
+# Fallback when the repo bin/ is not on PATH (e.g. minimal bind environment).
+_root="${SUMIKA_SHELL_ROOT:-}"
+if [[ -n "$_root" && -x "${_root}/bin/sumika-launch-tui" ]]; then
+  exec "${_root}/bin/sumika-launch-tui" "$TUI"
 fi
 
-if command -v xdg-terminal-exec >/dev/null 2>&1; then
-  exec xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.keyboardtui -e python3 "$KEYBOARD_TUI"
-fi
-
-# foot / kitty / alacritty / gnome-terminal / konsole fallbacks
-for term in foot kitty alacritty gnome-terminal konsole; do
-  if command -v "$term" >/dev/null 2>&1; then
-    case "$term" in
-      gnome-terminal) exec gnome-terminal -- python3 "$KEYBOARD_TUI" ;;
-      konsole)        exec konsole -e python3 "$KEYBOARD_TUI" ;;
-      *)              exec "$term" -e python3 "$KEYBOARD_TUI" ;;
-    esac
-  fi
-done
-
-run_tui
+echo "sumika-launch-tui not found (is SUMIKA_SHELL_ROOT set?)" >&2
+exit 127

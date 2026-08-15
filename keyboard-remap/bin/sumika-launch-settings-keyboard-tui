@@ -1,7 +1,12 @@
 #!/usr/bin/env bash
+# sumika-launch-settings-keyboard-tui — Launch the keyboard remap settings TUI
+# Follows the same unified TUI framework as file-backup, keyboard-remap, etc.
+
 set -euo pipefail
 
-SUMIKA_SHELL_ROOT="${SUMIKA_SHELL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
-export SUMIKA_SHELL_ROOT
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 
-exec "$SUMIKA_SHELL_ROOT/bin/sumika-launch-tui" "$SUMIKA_SHELL_ROOT/bin/sumika-settings-tui" keyboard
+# Single launch path: the main keyboard TUI launcher already handles
+# app-id + terminal fallback. Do not reference a repo-level
+# sumika-settings-tui here — that router does not exist.
+exec "$SCRIPT_DIR/sumika-launch-keyboard-tui"

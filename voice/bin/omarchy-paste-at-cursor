@@ -264,10 +264,14 @@ paste_kitty_remote() {
 
         # OpenCode/OMP enables Kitty OSC 5522 enhanced paste. A programmatic
         # bracketed send can therefore make it request the Wayland clipboard
-        # as a second payload. Temporarily clearing the clipboard prevents that
-        # duplicate while retaining one bracketed (bulk) paste transaction.
+        # as a second payload. Fill the clipboard with ONE SPACE during the
+        # send instead of clearing it: empty makes local omp's readText()
+        # return "" and it shows a "Clipboard is empty" status on every
+        # paste (remote omp has no wl-paste and skips silently); a space is
+        # non-empty, not an image, not a path — omp inserts at most one
+        # trailing space. Harmless, no toast, no duplicate.
         if command -v wl-copy >/dev/null 2>&1; then
-            wl-copy -c 2>/dev/null || true
+            printf ' ' | wl-copy 2>/dev/null || true
         fi
         send_rc=0
         if [ -n "$to_arg" ]; then
@@ -278,7 +282,9 @@ paste_kitty_remote() {
                 --from-file "$PAYLOAD_FILE" --bracketed-paste auto >/dev/null 2>&1 || send_rc=$?
         fi
         if command -v wl-copy >/dev/null 2>&1; then
-            sleep 0.05
+            # 150ms window: keep the space filler visible long enough that a
+            # late omp clipboard read never sees the restored payload path.
+            sleep 0.15
             restore_payload_clipboard || true
         fi
         return "$send_rc"

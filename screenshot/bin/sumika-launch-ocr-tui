@@ -1,42 +1,27 @@
-#!/bin/bash
-# omarchy:summary=Launch the Sumika Shell OCR setup TUI
-
+#!/usr/bin/env bash
+# sumika-launch-ocr-tui — Launch the Sumika Shell OCR setup TUI.
+#
+# Delegates to the unified sumika-launch-tui: the app-id is derived from the
+# TUI filename (io.github.iamcheyan.sumika.sumikaocrtui) and the terminal
+# fallback chain exists in exactly one place.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-OCR_TUI="${SCRIPT_DIR}/sumika-ocr-tui"
+TUI="${SCRIPT_DIR}/sumika-ocr-tui"
 
-if [[ ! -f "$OCR_TUI" ]]; then
-  echo "sumika-ocr-tui not found at $OCR_TUI" >&2
+if [[ ! -f "$TUI" ]]; then
+  echo "sumika-ocr-tui not found at $TUI" >&2
   exit 1
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 not found" >&2
-  exit 1
+if _launcher="$(command -v sumika-launch-tui)"; then
+  exec "$_launcher" "$TUI"
 fi
 
-run_tui() {
-  exec python3 "$OCR_TUI"
-}
-
-if command -v uwsm-app >/dev/null 2>&1 && command -v xdg-terminal-exec >/dev/null 2>&1; then
-  exec setsid uwsm-app -- xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.ocrtui -e python3 "$OCR_TUI"
+_root="${SUMIKA_SHELL_ROOT:-}"
+if [[ -n "$_root" && -x "${_root}/bin/sumika-launch-tui" ]]; then
+  exec "${_root}/bin/sumika-launch-tui" "$TUI"
 fi
 
-if command -v xdg-terminal-exec >/dev/null 2>&1; then
-  exec xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.ocrtui -e python3 "$OCR_TUI"
-fi
-
-# foot / kitty / alacritty / gnome-terminal fallbacks
-for term in foot kitty alacritty gnome-terminal konsole; do
-  if command -v "$term" >/dev/null 2>&1; then
-    case "$term" in
-      gnome-terminal) exec gnome-terminal -- python3 "$OCR_TUI" ;;
-      konsole)        exec konsole -e python3 "$OCR_TUI" ;;
-      *)              exec "$term" -e python3 "$OCR_TUI" ;;
-    esac
-  fi
-done
-
-run_tui
+echo "sumika-launch-tui not found (is SUMIKA_SHELL_ROOT set?)" >&2
+exit 127

@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
-# sumika-launch-musubi-tui — Launch the Musubi file-backup TUI in a terminal
-# Follows the same unified TUI framework as theme-settings, keyboard-remap, etc.
+# sumika-launch-musubi-tui — Launch the Musubi file-backup TUI in a terminal.
 #
-# NOTE: xdg-terminal-exec is deliberately NOT used as the primary launcher:
-# its kitty execarg mapping is `--` (kitty --class X -- <cmd>), which fails to
-# open a window under labwc. Direct terminal -e calls are used instead.
-
+# Delegates to the unified sumika-launch-tui. Musubi is a standalone program
+# with its own app-id namespace (io.github.iamcheyan.musubi, registered in
+# hypr/looknfeel.lua), so the id is passed explicitly with -a. Terminal
+# selection, uwsm wrapping and fallbacks live only in the shared launcher —
+# musubi gets exactly the same behavior (and labwc quirks) as every other TUI.
 set -euo pipefail
 
 MUSUBI_BIN="$(command -v musubi 2>/dev/null || true)"
@@ -17,34 +17,14 @@ if [[ ! -x "$MUSUBI_BIN" ]]; then
   exit 1
 fi
 
-# App-id matches hypr/looknfeel.lua -> io.github.iamcheyan.musubi (tui_rule)
-APP_ID=io.github.iamcheyan.musubi
-
-run_tui() {
-  exec "$MUSUBI_BIN"
-}
-
-if command -v uwsm-app >/dev/null 2>&1; then
-  if command -v foot >/dev/null 2>&1 && foot --version >/dev/null 2>&1; then
-    exec setsid uwsm-app -- foot --app-id="$APP_ID" -e "$MUSUBI_BIN"
-  fi
-
-  if command -v kitty >/dev/null 2>&1; then
-    exec setsid uwsm-app -- kitty --class="$APP_ID" -e "$MUSUBI_BIN"
-  fi
-
-  if command -v alacritty >/dev/null 2>&1; then
-    exec setsid uwsm-app -- alacritty --class "$APP_ID" -e "$MUSUBI_BIN"
-  fi
+if _launcher="$(command -v sumika-launch-tui)"; then
+  exec "$_launcher" -a io.github.iamcheyan.musubi "$MUSUBI_BIN"
 fi
 
-# No uwsm-app (or it exists but no terminal did): run without the session
-# wrapper — a bare TUI in this context is better than a dead launcher.
-if command -v foot >/dev/null 2>&1; then
-  exec setsid foot --app-id="$APP_ID" -e "$MUSUBI_BIN"
-fi
-if command -v kitty >/dev/null 2>&1; then
-  exec setsid kitty --class="$APP_ID" -e "$MUSUBI_BIN"
+_root="${SUMIKA_SHELL_ROOT:-}"
+if [[ -n "$_root" && -x "${_root}/bin/sumika-launch-tui" ]]; then
+  exec "${_root}/bin/sumika-launch-tui" -a io.github.iamcheyan.musubi "$MUSUBI_BIN"
 fi
 
-run_tui
+echo "sumika-launch-tui not found (is SUMIKA_SHELL_ROOT set?)" >&2
+exit 127

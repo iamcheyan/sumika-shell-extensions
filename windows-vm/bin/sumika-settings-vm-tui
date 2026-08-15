@@ -17,16 +17,34 @@ import sys
 import os
 import time
 
-# Point SUMIKA_SHELL_ROOT at this extension's root so the shared TUI framework's
-# run_cmd resolves scripts in our own bin/ directory.
-_EXT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if os.path.isfile(os.path.join(_EXT_ROOT, "module.json")):
-    os.environ["SUMIKA_SHELL_ROOT"] = _EXT_ROOT
+# Extension root and backend paths.
+_EXT_BIN = os.path.dirname(os.path.abspath(__file__))
+_EXT_ROOT = os.path.dirname(_EXT_BIN)
+_BACKEND = os.path.join(_EXT_BIN, "sumika-settings-windows-vm")
 
-_omd_bin = os.path.join(
-    os.environ.get("SUMIKA_SHELL_ROOT") or os.path.expanduser("~/.config/sumika-shell"), "bin")
-if _omd_bin not in sys.path:
-    sys.path.insert(0, _omd_bin)
+# Actions whose backend runtime is dominated by real work (docker image
+# pull, container create/start, rm -rf over the storage dir) instead of
+# quick status probes. These get a 30-minute run_cmd timeout.
+_LONG_ACTIONS = {"install", "install-defaults", "start", "stop", "remove", "auto-fix"}
+
+# Resolve the CORE repo bin/ (where sumika_tui_framework lives). Never point
+# SUMIKA_SHELL_ROOT at this extension: the framework reads it once at import
+# time and run_cmd would then resolve bare script names against our bin/ —
+# instead the backend is always called by ABSOLUTE path (same convention as
+# the keyboard-remap TUI), so the env stays untouched.
+_core_root = os.environ.get("SUMIKA_SHELL_ROOT") or ""
+if not os.path.isfile(os.path.join(_core_root, "bin", "sumika_tui_framework.py")):
+    _core_root = ""
+    _probe = _EXT_BIN
+    for _ in range(6):
+        _probe = os.path.dirname(_probe)
+        if os.path.isfile(os.path.join(_probe, "bin", "sumika_tui_framework.py")):
+            _core_root = _probe
+            break
+if _core_root:
+    _omd_bin = os.path.join(_core_root, "bin")
+    if _omd_bin not in sys.path:
+        sys.path.insert(0, _omd_bin)
 import sumika_tui_framework as S
 
 
@@ -110,8 +128,8 @@ class Model(S.StatusModel):
         def on_logs(lines, err):
             if not err:
                 self.logs = S.clip_lines(lines, 200) if lines else []
-        S.run_cmd_bg("sumika-settings-windows-vm", "status", callback=rc.cb(on_status))
-        S.run_cmd_bg("sumika-settings-windows-vm", "logs", callback=rc.cb(on_logs))
+        S.run_cmd_bg(_BACKEND, "status", callback=rc.cb(on_status))
+        S.run_cmd_bg(_BACKEND, "logs", callback=rc.cb(on_logs))
 
     def run_action(self, action, *extra):
         self.busy = True
@@ -134,12 +152,12 @@ class Model(S.StatusModel):
             self.refresh()
         if action in detach_actions:
             import subprocess
-            path = os.path.join(S.SUMIKA_SHELL_ROOT, "bin", "sumika-settings-windows-vm")
+            path = _BACKEND
             try:
                 subprocess.Popen(
                     ["setsid", path, action],
                     stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                    cwd=S.SUMIKA_SHELL_ROOT, close_fds=True,
+                    cwd=_EXT_ROOT, close_fds=True,
                 )
             except Exception as e:
                 self.append_log(f"detach error: {e}")
@@ -148,7 +166,11 @@ class Model(S.StatusModel):
             self.dirty = True
             self.refresh()
         else:
-            S.run_cmd_bg("sumika-settings-windows-vm", action, *extra, callback=cb)
+            # Long actions run real work (image pull, container create,
+            # rm -rf of the storage dir) — the framework default 15s probe
+            # timeout would SIGKILL them mid-run.
+            S.run_cmd_bg(_BACKEND, action, *extra, callback=cb,
+                         timeout=1800 if action in _LONG_ACTIONS else 15)
 
 
 # ── requirement checks ──────────────────────────────────────────────────
@@ -157,15 +179,20 @@ def all_requirement_checks(model):
     disk_detail = f"{model.disk_available()} GB free (need ≥ 74 GB)" if not disk_ok else f"{model.disk_available()} GB free"
     docker_detail = "Docker daemon reachable"
     if not model.boo("dockerAccess"):
-        docker_err = model.val("dockerError", "")
-        if docker_err:
-            docker_detail = docker_err
-        elif not model.boo("dockerDaemon"):
-            docker_detail = "Docker daemon is not running"
-        elif not model.boo("dockerGroupMember"):
-            docker_detail = "User is not in the docker group (re-login after usermod)"
+        if model.boo("dockerGroupPending"):
+            # Group membership exists in /etc/group but this session predates
+            # it — the raw dockerError ("permission denied") would mislead.
+            docker_detail = "Docker group membership is pending — log out and back in"
         else:
-            docker_detail = "Cannot access Docker socket"
+            docker_err = model.val("dockerError", "")
+            if docker_err:
+                docker_detail = docker_err
+            elif not model.boo("dockerDaemon"):
+                docker_detail = "Docker daemon is not running"
+            elif not model.boo("dockerGroupMember"):
+                docker_detail = "User is not in the docker group (re-login after usermod)"
+            else:
+                docker_detail = "Cannot access Docker socket"
     return [
         (model.boo("kvm"), "KVM virtualization", "Hardware virtualization (/dev/kvm)"),
         (model.boo("dockerCli"), "Docker CLI", "docker command available"),

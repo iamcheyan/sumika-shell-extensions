@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-SUMIKA_SHELL_ROOT="${SUMIKA_SHELL_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
+# All helper scripts below (omarchy-keyboard-*, sumika-keyboard-function-row)
+# are owned by THIS extension. Resolve them from SCRIPT_DIR — the session-wide
+# SUMIKA_SHELL_ROOT points at the core repo, which does not ship them.
 kv() {
   printf '%s=%s\n' "$1" "$2"
 }
@@ -21,7 +23,7 @@ case "${1:-status}" in
     fi
 
     # Check pending changes by comparing render with omd.conf
-    rendered="$("${SUMIKA_SHELL_ROOT}/bin/omarchy-keyboard-render" 2>/dev/null || true)"
+    rendered="$("${SCRIPT_DIR}/omarchy-keyboard-render" 2>/dev/null || true)"
     installed="$(cat /etc/keyd/sumika.conf 2>/dev/null || true)"
     if [[ "$rendered" == "$installed" ]]; then
       kv pendingChanges false
@@ -31,20 +33,20 @@ case "${1:-status}" in
     ;;
   setup)
     # Redirect stdin to dev null to prevent raw-mode terminal hangs
-    "${SUMIKA_SHELL_ROOT}/bin/omarchy-keyboard-setup" < /dev/null
+    "${SCRIPT_DIR}/omarchy-keyboard-setup" < /dev/null
     ;;
   apply)
     # Redirect stdin to dev null to prevent raw-mode terminal hangs
-    "${SUMIKA_SHELL_ROOT}/bin/omarchy-keyboard-apply" < /dev/null
+    "${SCRIPT_DIR}/omarchy-keyboard-apply" < /dev/null
     ;;
   key-test)
     "${SCRIPT_DIR}/../scripts/key-test-launcher" < /dev/null
     ;;
   fnmode-status)
-    "${SUMIKA_SHELL_ROOT}/bin/sumika-keyboard-function-row" status
+    "${SCRIPT_DIR}/sumika-keyboard-function-row" status
     ;;
   fnmode-set)
-    "${SUMIKA_SHELL_ROOT}/bin/sumika-keyboard-function-row" set "$2" < /dev/null
+    "${SCRIPT_DIR}/sumika-keyboard-function-row" set "$2" < /dev/null
     ;;
   *)
     echo "usage: sumika-settings-keyboard status|setup|apply|key-test|fnmode-status|fnmode-set" >&2

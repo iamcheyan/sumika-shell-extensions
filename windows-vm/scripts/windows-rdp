@@ -1,0 +1,77 @@
+#!/usr/bin/env bash
+# Connect to the Windows VM over RDP with xfreerdp.
+#
+# Companion to bin/sumika-settings-windows-vm (its `connect` subcommand execs
+# this script). Reads the RDP port from the docker-compose file and the
+# Windows credentials from the compose environment block, then launches
+# xfreerdp detached. Works both from a terminal and from the .desktop entry.
+set -euo pipefail
+
+COMPOSE_FILE="${WINDOWS_VM_COMPOSE_FILE:-$HOME/.config/windows/docker-compose.yml}"
+CONTAINER_NAME="${WINDOWS_VM_CONTAINER:-omarchy-windows}"
+RDP_HOST="${WINDOWS_VM_RDP_HOST:-127.0.0.1}"
+DEFAULT_RDP_PORT="${WINDOWS_VM_RDP_PORT:-3389}"
+
+have() { command -v "$1" >/dev/null 2>&1; }
+
+freerdp_bin() {
+  if have xfreerdp3; then
+    printf 'xfreerdp3'
+  elif have xfreerdp; then
+    printf 'xfreerdp'
+  else
+    return 1
+  fi
+}
+
+rdp_port() {
+  [[ -f "$COMPOSE_FILE" ]] || { printf '%s' "$DEFAULT_RDP_PORT"; return; }
+  local port
+  port="$(awk '
+    match($0, /127\.0\.0\.1:([0-9]+):3389\/tcp/, m) {
+      print m[1]
+      exit
+    }
+  ' "$COMPOSE_FILE")"
+  [[ -n "$port" ]] && printf '%s' "$port" || printf '%s' "$DEFAULT_RDP_PORT"
+}
+
+compose_env() {
+  # Print the value of a key from the compose `environment:` block.
+  local key="$1"
+  [[ -f "$COMPOSE_FILE" ]] || return 0
+  awk -v key="$key" '
+    $1 == key ":" {
+      $1 = ""
+      sub(/^[[:space:]]+/, "")
+      gsub(/^"/, "")
+      gsub(/"$/, "")
+      print
+      exit
+    }
+  ' "$COMPOSE_FILE"
+}
+
+main() {
+  local bin port user pass
+  bin="$(freerdp_bin)" || {
+    echo "ERROR: xfreerdp/xfreerdp3 is not installed." >&2
+    exit 1
+  }
+  port="$(rdp_port)"
+  user="$(compose_env USERNAME)"
+  pass="$(compose_env PASSWORD)"
+
+  local -a args=(
+    /v:"$RDP_HOST:$port"
+    /cert:ignore
+    /dynamic-resolution
+    /sound
+    /microphone
+    /clipboard
+  )
+
+  exec "$bin" "${args[@]}"
+}
+
+main "$@"

@@ -35,9 +35,18 @@ resolve_editor() {
 
 editor="$(resolve_editor)"
 
-xdg-terminal-exec \
-  --app-id=io.github.iamcheyan.sumika.editvoiceconfig \
+# The editor binary is not a named TUI script, so its basename would derive a
+# meaningless app-id. Pass the registered id explicitly (-a); the terminal
+# fallback chain lives only in sumika-launch-tui.
+_launcher="$(command -v sumika-launch-tui || true)"
+[[ -z "$_launcher" && -n "${SUMIKA_SHELL_ROOT:-}" && -x "${SUMIKA_SHELL_ROOT}/bin/sumika-launch-tui" ]] \
+  && _launcher="${SUMIKA_SHELL_ROOT}/bin/sumika-launch-tui"
+
+if [[ -n "$_launcher" ]]; then
+  "$_launcher" -a io.github.iamcheyan.sumika.editvoiceconfig "$editor" "$config_file"
+else
   "$editor" "$config_file"
+fi
 
 if command -v hyprctl >/dev/null 2>&1; then
   hyprctl reload >/dev/null 2>&1 || true

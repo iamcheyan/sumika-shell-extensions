@@ -1,44 +1,27 @@
 #!/usr/bin/env bash
-# sumika-launch-settings-windows-tui — Launch the Windows VM settings TUI
-# Follows the same unified TUI framework as keyboard-remap, wifi, bluetooth.
-
+# sumika-launch-settings-windows-tui — Launch the Windows VM settings TUI.
+#
+# Delegates to the unified sumika-launch-tui: the app-id is derived from the
+# TUI filename (io.github.iamcheyan.sumika.sumikasettingsvmtui) and the
+# terminal fallback chain exists in exactly one place.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
-TUI_SCRIPT="${SCRIPT_DIR}/sumika-settings-vm-tui"
+TUI="${SCRIPT_DIR}/sumika-settings-vm-tui"
 
-if [[ ! -f "$TUI_SCRIPT" ]]; then
-  echo "sumika-settings-vm-tui not found at $TUI_SCRIPT" >&2
+if [[ ! -f "$TUI" ]]; then
+  echo "sumika-settings-vm-tui not found at $TUI" >&2
   exit 1
 fi
 
-if ! command -v python3 >/dev/null 2>&1; then
-  echo "python3 not found" >&2
-  exit 1
+if _launcher="$(command -v sumika-launch-tui)"; then
+  exec "$_launcher" "$TUI"
 fi
 
-run_tui() {
-  exec python3 "$TUI_SCRIPT"
-}
-
-# Prefer xdg-terminal-exec with a dedicated app-id for Hyprland floating rules.
-if command -v uwsm-app >/dev/null 2>&1 && command -v xdg-terminal-exec >/dev/null 2>&1; then
-  exec setsid uwsm-app -- xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.windowsvmtui -e python3 "$TUI_SCRIPT"
+_root="${SUMIKA_SHELL_ROOT:-}"
+if [[ -n "$_root" && -x "${_root}/bin/sumika-launch-tui" ]]; then
+  exec "${_root}/bin/sumika-launch-tui" "$TUI"
 fi
 
-if command -v xdg-terminal-exec >/dev/null 2>&1; then
-  exec xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.windowsvmtui -e python3 "$TUI_SCRIPT"
-fi
-
-# foot / kitty / alacritty / gnome-terminal / konsole fallbacks
-for term in foot kitty alacritty gnome-terminal konsole; do
-  if command -v "$term" >/dev/null 2>&1; then
-    case "$term" in
-      gnome-terminal) exec gnome-terminal -- python3 "$TUI_SCRIPT" ;;
-      konsole)        exec konsole -e python3 "$TUI_SCRIPT" ;;
-      *)              exec "$term" -e python3 "$TUI_SCRIPT" ;;
-    esac
-  fi
-done
-
-run_tui
+echo "sumika-launch-tui not found (is SUMIKA_SHELL_ROOT set?)" >&2
+exit 127

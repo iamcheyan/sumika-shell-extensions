@@ -25,9 +25,9 @@ fast_pid_file="${XDG_RUNTIME_DIR:-/tmp}/sumika-screenshot-fast.pid"
 
 # Hyprland binds can run with a minimal environment.
 if [ -n "${PATH:-}" ]; then
-    export PATH="$PATH:/usr/bin:/usr/local/bin:${HOME}/.local/bin"
+    export PATH="$PATH:/usr/bin:/usr/local/bin:/run/current-system/sw/bin:${HOME}/.local/bin"
 else
-    export PATH="/usr/bin:/usr/local/bin:${HOME}/.local/bin"
+    export PATH="/usr/bin:/usr/local/bin:/run/current-system/sw/bin:${HOME}/.local/bin"
 fi
 
 # Normalize legacy aliases.
@@ -116,15 +116,11 @@ focused_monitor() {
 # cursor in a screenshot is a minor cosmetic issue; a stuck-hidden cursor
 # is a real bug.)
 
-# Resolve the bar app path used for freeze/unfreeze IPC. Prefer the live
-# session root; fall back to the OMD checkout when SUMIKA_SHELL_ROOT is unset.
+# Resolve the bar app path used for freeze/unfreeze IPC from the live
+# session root only. No clone-location guessing: unset means clean failure.
 bar_app_path() {
     if [ -n "${SUMIKA_SHELL_ROOT:-}" ] && [ -d "${SUMIKA_SHELL_ROOT}/apps/sumika-bar" ]; then
         printf '%s\n' "${SUMIKA_SHELL_ROOT}/apps/sumika-bar"
-        return 0
-    fi
-    if [ -d "${HOME}/development/OMD/apps/sumika-bar" ]; then
-        printf '%s\n' "${HOME}/development/OMD/apps/sumika-bar"
         return 0
     fi
     return 1
@@ -336,15 +332,20 @@ launch_direct() {
 
     qs_bin="${SUMIKA_QS_BIN:-}"
     if [ -z "$qs_bin" ]; then
-        if [ -x /usr/bin/qs ]; then
-            qs_bin=/usr/bin/qs
-        elif [ -x /usr/bin/quickshell ]; then
-            qs_bin=/usr/bin/quickshell
-        elif [ -x "$HOME/.local/bin/qs" ]; then
-            qs_bin="$HOME/.local/bin/qs"
-        elif [ -x "$HOME/.local/bin/quickshell" ]; then
-            qs_bin="$HOME/.local/bin/quickshell"
-        fi
+        # Distro layouts: Arch/Omarchy (/usr/bin), user installs (~/.local/bin),
+        # NixOS (/run/current-system/sw/bin), then whatever PATH provides.
+        for candidate in \
+            /usr/bin/qs /usr/bin/quickshell \
+            "$HOME/.local/bin/qs" "$HOME/.local/bin/quickshell" \
+            /run/current-system/sw/bin/qs /run/current-system/sw/bin/quickshell; do
+            if [ -x "$candidate" ]; then
+                qs_bin="$candidate"
+                break
+            fi
+        done
+    fi
+    if [ -z "$qs_bin" ]; then
+        qs_bin="$(command -v qs 2>/dev/null || command -v quickshell 2>/dev/null || true)"
     fi
     if [ -z "$qs_bin" ]; then
         echo "Quickshell executable not found" >&2

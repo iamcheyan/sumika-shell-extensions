@@ -1,4 +1,4 @@
-#!/bin/bash
+#!/usr/bin/env bash
 set -eu
 
 # omarchy:summary=Download SenseVoice ONNX model

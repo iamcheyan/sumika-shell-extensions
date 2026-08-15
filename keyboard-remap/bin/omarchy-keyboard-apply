@@ -4,6 +4,12 @@
 set -eu
 
 # Resolve the true SUMIKA_SHELL_ROOT directory even if executed under sudo
+# NixOS keeps setuid privilege helpers (pkexec/sudo) in /run/wrappers/bin;
+# the PATH-visible copies under /nix/store are NOT setuid and always fail.
+if [ -d /run/wrappers/bin ]; then
+    export PATH="/run/wrappers/bin:$PATH"
+fi
+
 REAL_HOME="${HOME}"
 if [[ "${USER:-}" == "root" && -n "${SUDO_USER:-}" ]]; then
     REAL_HOME=$(getent passwd "$SUDO_USER" | cut -d: -f6)
@@ -15,7 +21,9 @@ SUMIKA_CONFIG="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$REAL_HOME/.config
 SUMIKA_STATE="${SUMIKA_SHELL_STATE_HOME:-${XDG_STATE_HOME:-$REAL_HOME/.local/state}/sumika-shell}"
 # profiles.json: user-authored config (new path with legacy fallback for reads)
 PROFILES="${SUMIKA_CONFIG}/keyboard-remap/profiles.json"
-PROFILES_LEGACY="${SUMIKA_SHELL_ROOT}/keyboard-remap/profiles.json"
+# Legacy layout: profiles next to this extension. Derive from BASH_SOURCE —
+# the session-wide SUMIKA_SHELL_ROOT points at the core repo, not here.
+PROFILES_LEGACY="$(cd "$(dirname "${BASH_SOURCE[0]:-$0}")/.." && pwd)/keyboard-remap/profiles.json"
 # keyd.generated.conf: generated state (always write to new path)
 GENERATED="${SUMIKA_STATE}/keyboard-remap/keyd.generated.conf"
 KEYD_DEST="/etc/keyd/sumika.conf"

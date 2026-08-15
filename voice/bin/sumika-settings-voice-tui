@@ -28,11 +28,11 @@ _EXT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 # the extension root or the shared framework becomes unreachable.
 _core_root = os.environ.get("SUMIKA_SHELL_ROOT", "")
 if not _core_root:
-    action = os.path.realpath(
-        __import__("shutil").which("sumika-action") or
-        os.path.expanduser("~/development/OMD/bin/sumika-action")
-    )
-    _core_root = os.path.dirname(os.path.dirname(action))
+    action = __import__("shutil").which("sumika-action")
+    if not action:
+        sys.exit("sumika-settings-voice-tui: cannot locate Sumika core "
+                 "(set SUMIKA_SHELL_ROOT or put bin/ on PATH)")
+    _core_root = os.path.dirname(os.path.dirname(os.path.realpath(action)))
 _core_bin = os.path.join(_core_root, "bin")
 if _core_bin not in sys.path:
     sys.path.insert(0, _core_bin)

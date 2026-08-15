@@ -1,16 +1,27 @@
 #!/usr/bin/env bash
+# sumika-launch-settings-voice-tui — Launch the voice settings TUI.
+#
+# Delegates to the unified sumika-launch-tui: the app-id is derived from the
+# TUI filename (io.github.iamcheyan.sumika.sumikasettingsvoicetui) and the
+# terminal fallback chain exists in exactly one place.
 set -euo pipefail
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-export SCRIPT_DIR
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+TUI="${SCRIPT_DIR}/sumika-settings-voice-tui"
 
-# Use sumika-launch-tui from PATH, or fall back to xdg-terminal-exec
-if command -v sumika-launch-tui >/dev/null 2>&1; then
-    exec sumika-launch-tui "$SCRIPT_DIR/sumika-settings-voice-tui" voice
-else
-    case "${TERM:-}" in
-        foot) exec foot --app-id=io.github.iamcheyan.sumika.voicesettings "$SCRIPT_DIR/sumika-settings-voice-tui" voice ;;
-        kitty) exec kitty --class=io.github.iamcheyan.sumika.voicesettings "$SCRIPT_DIR/sumika-settings-voice-tui" voice ;;
-        *) exec xdg-terminal-exec --app-id=io.github.iamcheyan.sumika.voicesettings "$SCRIPT_DIR/sumika-settings-voice-tui" voice ;;
-    esac
+if [[ ! -f "$TUI" ]]; then
+  echo "sumika-settings-voice-tui not found at $TUI" >&2
+  exit 1
 fi
+
+if _launcher="$(command -v sumika-launch-tui)"; then
+  exec "$_launcher" "$TUI" "${@:2}"
+fi
+
+_root="${SUMIKA_SHELL_ROOT:-}"
+if [[ -n "$_root" && -x "${_root}/bin/sumika-launch-tui" ]]; then
+  exec "${_root}/bin/sumika-launch-tui" "$TUI" "${@:2}"
+fi
+
+echo "sumika-launch-tui not found (is SUMIKA_SHELL_ROOT set?)" >&2
+exit 127

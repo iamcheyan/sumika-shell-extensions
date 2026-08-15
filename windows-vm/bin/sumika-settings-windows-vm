@@ -11,7 +11,10 @@ WEB_PORT="${WINDOWS_VM_WEB_PORT:-8006}"
 WEB_URL="${WINDOWS_VM_WEB_URL:-http://$WEB_HOST:$WEB_PORT}"
 RDP_HOST="${WINDOWS_VM_RDP_HOST:-127.0.0.1}"
 DEFAULT_RDP_PORT="${WINDOWS_VM_RDP_PORT:-3389}"
-SUMIKA_SHELL_ROOT="${SUMIKA_SHELL_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)}"
+# Extension-local resource root. Self-locate: the session-wide SUMIKA_SHELL_ROOT
+# env var points at the CORE repo (which has no scripts/windows-rdp), so never
+# trust it here.
+SUMIKA_SHELL_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 RDP_LAUNCHER="${WINDOWS_VM_RDP_LAUNCHER:-$SUMIKA_SHELL_ROOT/scripts/windows-rdp}"
 
 kv() {
@@ -101,11 +104,17 @@ docker_error() {
 }
 
 docker_daemon_available() {
+  # Daemon liveness independent of the caller's socket permissions.
+  # `docker info` conflates "daemon down" with "user lacks access" — check the
+  # service state first so the UI can tell the two apart.
+  if have systemctl && systemctl is-active --quiet docker; then
+    return 0
+  fi
   have docker && docker info >/dev/null 2>&1
 }
 
 docker_access_available() {
-  docker_daemon_available
+  have docker && docker info >/dev/null 2>&1
 }
 
 docker_socket_present() {
@@ -114,6 +123,13 @@ docker_socket_present() {
 
 docker_group_member() {
   id -nG 2>/dev/null | tr ' ' '\n' | grep -qx docker
+}
+
+docker_group_pending() {
+  # In /etc/group but not in this session's groups: the membership was added
+  # after login and only takes effect after the next log-in.
+  docker_group_member && return 1
+  getent group docker 2>/dev/null | cut -d: -f4 | tr ',' '\n' | grep -qx "$(id -un 2>/dev/null)"
 }
 
 container_status() {
@@ -250,7 +266,7 @@ ready_state() {
 
 print_common_status() {
   local configured=false storage_present=false kvm=false docker_cli=false docker_daemon=false docker_access=false
-  local docker_socket=false docker_group=false compose_ok=false freerdp=false freerdp_path=""
+  local docker_socket=false docker_group=false docker_group_pending=false compose_ok=false freerdp=false freerdp_path=""
   local status phase_value ready=false web_ok=false rdp_ok=false docker_err=""
   local logs="" progress_percent=""
 
@@ -261,6 +277,7 @@ print_common_status() {
   docker_daemon_available && docker_daemon=true
   docker_access_available && docker_access=true
   docker_socket_present && docker_socket=true
+  docker_group_pending && docker_group_pending=true
   docker_group_member && docker_group=true
   compose_available && compose_ok=true
   if freerdp_path="$(freerdp_bin 2>/dev/null)"; then
@@ -290,6 +307,7 @@ print_common_status() {
   kv dockerAccess "$docker_access"
   kv dockerSocket "$docker_socket"
   kv dockerGroupMember "$docker_group"
+  kv dockerGroupPending "$docker_group_pending"
   kv dockerError "$docker_err"
   kv compose "$compose_ok"
   kv freerdp "$freerdp"
@@ -383,11 +401,26 @@ Categories=System;Virtualization;
 EOF
 }
 
+yaml_escape() {
+  # Escape a value for a YAML double-quoted scalar: backslash, double quote
+  # and control characters. Prevents compose-file breakage/injection from
+  # user-supplied credentials.
+  local v="$1"
+  v="${v//\\/\\\\}"
+  v="${v//\"/\\\"}"
+  printf '%s' "$v" | tr -d '\000-\010\013\014\016-\037'
+}
+
 write_compose() {
   local ram="$1" cpu="$2" disk="$3" user="$4" pass="$5"
   local tz rdp_port
   tz="$(timedatectl show -p Timezone --value 2>/dev/null || echo UTC)"
   rdp_port="$(select_rdp_port)"
+
+  # User/pass come from free-text settings input — escape before embedding.
+  user="$(yaml_escape "$user")"
+  pass="$(yaml_escape "$pass")"
+  tz="$(yaml_escape "$tz")"
 
   mkdir -p "$CONFIG_DIR" "$STORAGE_DIR" "$SHARED_DIR"
   cat > "$COMPOSE_FILE" << EOF
@@ -419,6 +452,9 @@ services:
     restart: unless-stopped
     stop_grace_period: 2m
 EOF
+  # Compose file contains the Windows account password in plain text — it
+  # must not be world/group readable.
+  chmod 600 "$COMPOSE_FILE"
   ensure_desktop_file
 }
 
@@ -506,6 +542,10 @@ install_docker() {
     kv error "pkexec is not installed."
     return 1
   }
+  if ! have docker && ! have dnf && ! have apt && ! have pacman; then
+    kv error "No supported package manager (dnf/apt/pacman). Install Docker and add yourself to the docker group via your system configuration (e.g. NixOS: virtualisation.docker.enable)."
+    return 1
+  fi
   kv progress "Installing or starting Docker..."
   pkexec bash -c '
     set -e
@@ -547,6 +587,10 @@ install_packages() {
     kv error "pkexec is not installed."
     return 1
   }
+  if ! have dnf && ! have apt && ! have pacman; then
+    kv error "No supported package manager (dnf/apt/pacman). Install freerdp via your system configuration (e.g. NixOS: programs.freerdp or environment.systemPackages)."
+    return 1
+  fi
   kv progress "Installing FreeRDP and network helpers..."
   pkexec bash -c '
     set -e
@@ -705,8 +749,49 @@ remove_vm() {
     docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
   fi
   rm -f "$HOME/.local/share/applications/windows-vm.desktop"
-  rm -rf "$CONFIG_DIR" "$STORAGE_DIR"
+  if ! safe_rm_rf "$CONFIG_DIR"; then
+    kv error "Refusing to delete config dir: $CONFIG_DIR (guard rejected)"
+    return 1
+  fi
+  if ! safe_rm_rf "$STORAGE_DIR"; then
+    kv error "Refusing to delete storage dir: $STORAGE_DIR (guard rejected)"
+    return 1
+  fi
   kv result "removed"
+}
+
+safe_rm_rf() {
+  # Guard for rm -rf targets. Both dirs are env-overridable, so validate
+  # before deleting anything:
+  #   - exact shipped defaults (~/.config/windows, ~/.windows) are allowed;
+  #   - env-overridden targets must be inside $HOME, at least two path
+  #     components deep, and must NOT live under well-known user dirs
+  #     (Documents, .config, .local, ...). Overrides that fail these checks
+  #     are rejected — the user can always delete manually.
+  local target="$1"
+  [[ -n "$target" && "$target" != "/" && "$target" != "$HOME" ]] || return 1
+  [[ -e "$target" ]] || return 0  # nothing to delete — fine
+
+  case "$target" in
+    "$HOME/.config/windows"|"$HOME/.windows")
+      rm -rf -- "$target"
+      return 0
+      ;;
+  esac
+
+  case "$target" in
+    "$HOME"/*) ;;
+    *) return 1 ;;
+  esac
+  local rel="${target#"$HOME"/}"
+  [[ "$rel" == */* ]] || return 1  # require at least two components under $HOME
+  case "/${rel%/}/" in
+    */Documents/*|*/Downloads/*|*/Pictures/*|*/Music/*|*/Videos/*|*/Desktop/*|\
+    */.config/*|*/.local/*|*/.cache/*|*/.ssh/*|*/.gnupg/*|*/development/*)
+      return 1
+      ;;
+  esac
+  rm -rf -- "$target"
 }
 
 open_web() {
@@ -741,7 +826,7 @@ case "${1:-status}" in
     ;;
   web) open_web ;;
   *)
-    echo "usage: $(basename "$0") status|check-resources|install-docker|install-packages|install|install-defaults|install-status|logs|start|connect|start-connect|launch|launch-keepalive|stop|remove --yes|web" >&2
+    echo "usage: $(basename "$0") status|check-resources|install-docker|install-packages|install|install-defaults|install-status|auto-fix|logs|start|connect|start-connect|launch|launch-keepalive|stop|remove --yes|web" >&2
     exit 2
     ;;
 esac
