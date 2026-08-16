@@ -49,9 +49,11 @@ Singleton {
 
     readonly property string cacheDir: FileUtils.trimFileProtocol(`${Directories.genericCache}/sumika-voice`)
     readonly property string modelDir: `${root.cacheDir}/sense-voice-small-int8`
-    readonly property string venvDir: `${root.cacheDir}/venv`
-    readonly property string wavPath: "/tmp/sumika-voice-rec.wav"
-    readonly property string recPidFile: "/tmp/sumika-voice-rec.pid"
+    // Per-user runtime dir (0700); never use fixed /tmp paths.
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || `/run/user/${Quickshell.env("UID") || ""}`
+    readonly property string wavPath: `${root.runtimeDir}/sumika-voice-rec.wav`
+    readonly property string recPidFile: `${root.runtimeDir}/sumika-voice-rec.pid`
+    readonly property string cancelFlagFile: `${root.runtimeDir}/sumika-voice-cancel`
 
     readonly property string shareDir: {
         const dir = FileUtils.trimFileProtocol(Qt.resolvedUrl(".")) + "/bin"
@@ -102,7 +104,7 @@ Singleton {
     onStateChanged: {
         if (state === "recording") {
             // Bind Escape to cancel via file flag (self-contained, no bar IPC needed)
-            Quickshell.execDetached(["hyprctl", "eval", "o.bind(\"escape\", \"Cancel voice recording\", \"touch /tmp/sumika-voice-cancel\")"])
+            Quickshell.execDetached(["hyprctl", "eval", `o.bind("escape", "Cancel voice recording", "touch '${root.cancelFlagFile}'")`])
         } else {
             Quickshell.execDetached(["hyprctl", "eval", "hl.unbind(\"escape\")"])
         }
@@ -154,10 +156,10 @@ Singleton {
     Process {
         id: cancelFileCheckProc
         running: false
-        command: ["test", "-f", "/tmp/sumika-voice-cancel"]
+        command: ["test", "-f", root.cancelFlagFile]
         onExited: (code, status) => {
             if (code === 0) {
-                Quickshell.execDetached(["rm", "-f", "/tmp/sumika-voice-cancel"])
+                Quickshell.execDetached(["rm", "-f", root.cancelFlagFile])
                 root.cancel()
             }
         }
@@ -186,7 +188,7 @@ Singleton {
     Process {
         id: daemonCheckProc
         command: ["bash", "-c",
-            `if [ -S /tmp/sumika-voice.sock ] && ss -xl src /tmp/sumika-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo stopped; fi`]
+            `if [ -S '${root.runtimeDir}/sumika-voice.sock' ] && ss -xl src '${root.runtimeDir}/sumika-voice.sock' 2>/dev/null | grep -q LISTEN; then echo running; else echo stopped; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 root.daemonRunning = (line === "running")

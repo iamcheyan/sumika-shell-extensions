@@ -23,8 +23,18 @@ import tempfile
 import time
 import wave
 
-SOCKET_PATH = "/tmp/sumika-voice.sock"
-DAEMON_PID_PATH = "/tmp/sumika-voice.pid"
+def _runtime_dir():
+    """Return a private per-user runtime directory; never use /tmp."""
+    runtime_dir = os.environ.get("XDG_RUNTIME_DIR") or f"/run/user/{os.getuid()}"
+    if not os.path.isdir(runtime_dir):
+        raise SystemExit(json.dumps({"error": f"runtime-dir-missing: {runtime_dir}"}))
+    return runtime_dir
+
+
+RUNTIME_DIR = _runtime_dir()
+SOCKET_PATH = os.path.join(RUNTIME_DIR, "sumika-voice.sock")
+LEGACY_SOCKET_PATH = "/tmp/sumika-voice.sock"
+DAEMON_PID_PATH = os.path.join(RUNTIME_DIR, "sumika-voice.pid")
 CACHE_DIR = os.path.expanduser("~/.cache/sumika-voice")
 LOG_PATH = os.path.join(CACHE_DIR, "transcribe.log")
 MODEL_DIR = os.environ.get(
@@ -116,7 +126,7 @@ def start_daemon():
 
 
 def _run_daemon():
-    """Load model and listen on Unix socket."""
+    """Load model and listen on a private Unix socket."""
     try:
         import numpy as np
         import sherpa_onnx
@@ -146,15 +156,24 @@ def _run_daemon():
         print(json.dumps({"error": f"model-load: {e}"}), flush=True)
         sys.exit(1)
 
-    # Remove stale socket
+    if os.path.exists(LEGACY_SOCKET_PATH):
+        try:
+            os.unlink(LEGACY_SOCKET_PATH)
+        except OSError:
+            pass
+
     try:
         os.unlink(SOCKET_PATH)
     except FileNotFoundError:
         pass
 
     server = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-    server.bind(SOCKET_PATH)
-    os.chmod(SOCKET_PATH, 0o666)
+    old_umask = os.umask(0o177)
+    try:
+        server.bind(SOCKET_PATH)
+    finally:
+        os.umask(old_umask)
+    os.chmod(SOCKET_PATH, 0o600)
     server.listen(5)
     server.settimeout(1.0)
 

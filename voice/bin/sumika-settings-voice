@@ -32,8 +32,8 @@ MODEL_BYTES_TOTAL=240000000  # ~229 MB SenseVoice Small INT8, used for progress 
 MODEL_DIR="${SUMIKA_VOICE_MODEL:-$HOME/.cache/sumika-voice/sense-voice-small-int8}"
 VENV_DIR="${SUMIKA_VOICE_VENV:-$HOME/.cache/sumika-voice/venv}"
 CACHE_DIR="${SUMIKA_VOICE_CACHE:-$HOME/.cache/sumika-voice}"
-SOCKET="/tmp/sumika-voice.sock"
-REC_PID_PATH="${SUMIKA_VOICE_REC_PID:-/tmp/sumika-voice-rec.pid}"
+SOCKET="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sumika-voice.sock"
+REC_PID_PATH="${SUMIKA_VOICE_REC_PID:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sumika-voice-rec.pid}"
 BINDINGS_FILE="${SUMIKA_SHELL_CONFIG_HOME:-${XDG_CONFIG_HOME:-$HOME/.config}/sumika-shell}/voice/config.json"
 
 kv() {
@@ -556,7 +556,7 @@ diagnose() {
 
 test_tui() {
   echo "Starting a 3-second recording test..."
-  local test_wav="/tmp/sumika-voice-test.wav"
+  local test_wav="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sumika-voice-test.wav"
   rm -f "$test_wav"
 
   if command -v parecord >/dev/null 2>&1; then
@@ -592,7 +592,7 @@ mic_level() {
     printf '0'
     return
   fi
-  local wav="/tmp/sumika-voice-rec.wav"
+  local wav="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sumika-voice-rec.wav"
   if [[ ! -f "$wav" ]]; then
     printf '0'
     return
@@ -645,7 +645,7 @@ record_stop() {
   "$SCRIPT_DIR/omarchy-voice-record" stop >/dev/null 2>&1 || true
   # Transcribe the captured wav and always push a recent entry (empty text
   # means no speech detected) so the TUI can leave the "transcribing" phase.
-  local wav="/tmp/sumika-voice-rec.wav"
+  local wav="${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sumika-voice-rec.wav"
   local text=""
   if [[ -f "$wav" ]]; then
     text="$("$SCRIPT_DIR/omarchy-voice-transcribe" "$wav" 2>/dev/null | python3 -c 'import json,sys; print(json.load(sys.stdin).get("text",""))' 2>/dev/null || true)"

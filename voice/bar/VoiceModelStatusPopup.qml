@@ -9,7 +9,7 @@ ManagedPopupWindow {
     id: root
 
     property string shareDir: FileUtils.trimFileProtocol(Qt.resolvedUrl("..")) + "/bin"
-
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || `/run/user/${Quickshell.env("UID") || ""}`
     readonly property int itemHeight: 32
     readonly property int indicatorSize: 16
     readonly property real hPadding: 10
@@ -98,7 +98,7 @@ ManagedPopupWindow {
     Process {
         id: daemonCheckProc
         command: ["bash", "-c",
-            `if [ -S /tmp/sumika-voice.sock ] && ss -xl src /tmp/sumika-voice.sock 2>/dev/null | grep -q LISTEN; then echo running; else echo idle; fi`]
+            `if [ -S '${root.runtimeDir}/sumika-voice.sock' ] && ss -xl src '${root.runtimeDir}/sumika-voice.sock' 2>/dev/null | grep -q LISTEN; then echo running; else echo idle; fi`]
         stdout: SplitParser {
             onRead: (line) => {
                 root.daemonStatus = line === "running" ? "ok" : "idle"

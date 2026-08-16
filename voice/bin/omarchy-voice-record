@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-WAV_PATH="${SUMIKA_VOICE_WAV:-/tmp/sumika-voice-rec.wav}"
-PID_PATH="${SUMIKA_VOICE_REC_PID:-/tmp/sumika-voice-rec.pid}"
+WAV_PATH="${SUMIKA_VOICE_WAV:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sumika-voice-rec.wav}"
+PID_PATH="${SUMIKA_VOICE_REC_PID:-${XDG_RUNTIME_DIR:-/run/user/$(id -u)}/sumika-voice-rec.pid}"
 
 recording_pids() {
   pgrep -f "[p]arecord .*${WAV_PATH}" 2>/dev/null || true
