@@ -64,18 +64,10 @@ if ! command -v keyd >/dev/null 2>&1; then
     exit 2
 fi
 
-install_payload="
-    set -eu
-    mkdir -p /etc/keyd
-    install -m 0644 '$GENERATED' '$KEYD_DEST'
-    if command -v systemctl >/dev/null 2>&1; then
-        systemctl enable keyd >/dev/null 2>&1 || true
-        systemctl restart keyd
-    else
-        pkill -x keyd 2>/dev/null || true
-        keyd &
-    fi
-"
+# Payload shape is PINNED: 50-sumika-keyboard.rules approves exactly this
+# form. Keep the non-systemd fallback out of the elevated payload; it must
+# use the normal password-protected fallback helpers below.
+install_payload="set -eu; mkdir -p /etc/keyd; install -m 0644 '$GENERATED' /etc/keyd/sumika.conf; systemctl enable keyd || true; systemctl restart keyd || true"
 
 apply_as_root() {
     if command -v pkexec >/dev/null 2>&1 && pkexec bash -c "$install_payload"; then

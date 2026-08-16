@@ -1,32 +1,57 @@
-// Allow active users to run the Sumika Shell keyboard-remap apply helper without a password.
-// This rule matches the pkexec action and the bash -c install command used by
-// omarchy-keyboard-apply to write /etc/keyd/sumika.conf and restart keyd.
+// Allow trusted local users to install the Sumika Shell keyd config without a
+// password.
 //
-// Install with:
-//   sudo install -m 0644 50-sumika-keyboard.rules /etc/polkit-1/rules.d/
-//
-// The rule is intentionally narrow: it only allows the specific bash -c command
-// pattern that omarchy-keyboard-apply emits via pkexec.
+// SECURITY: validate the exact shape of the pkexec command line emitted by
+// omarchy-keyboard-apply. Substring matching would approve an arbitrary
+// payload that merely mentions /etc/keyd/sumika.conf or systemctl restart keyd.
+
+var SUMIKA_BASH = ["/usr/bin/bash", "/bin/bash"];
+
+var PAYLOAD_PREFIX = "/usr/bin/bash -c set -eu; mkdir -p /etc/keyd; install -m 0644 '";
+var PAYLOAD_MIDDLE = "' /etc/keyd/sumika.conf; systemctl enable keyd || true; systemctl restart keyd || true";
 
 polkit.addRule(function(action, subject) {
     if (action.id !== "org.freedesktop.policykit.exec") {
         return polkit.Result.NOT_HANDLED;
     }
 
-    var command = action.lookup("command_line");
-    if (!command || command.indexOf("bash -c") === -1) {
+    var program = action.lookup("program");
+    if (!program || SUMIKA_BASH.indexOf(program) === -1) {
         return polkit.Result.NOT_HANDLED;
     }
 
-    // Only match the Sumika Shell keyd apply payload: installs to /etc/keyd/sumika.conf
-    // and restarts keyd. The exact payload is constructed by omarchy-keyboard-apply.
-    if (command.indexOf("/etc/keyd/sumika.conf") === -1
-        && command.indexOf("systemctl restart keyd") === -1
-        && command.indexOf("systemctl enable keyd") === -1) {
+    var command = action.lookup("command_line");
+    if (!command) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    var prefix = PAYLOAD_PREFIX.replace("/usr/bin/bash", program);
+    if (command.indexOf(prefix) !== 0) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    var rest = command.substring(prefix.length);
+    var idx = rest.indexOf(PAYLOAD_MIDDLE);
+    if (idx === -1 || idx + PAYLOAD_MIDDLE.length !== rest.length) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    // The only variable part is the generated keyd config path. Reject shell
+    // metacharacters so the single-quoted payload cannot be escaped.
+    var generatedPath = rest.substring(0, idx);
+    if (generatedPath.length === 0
+        || generatedPath.indexOf("'") !== -1
+        || generatedPath.indexOf(" ") !== -1
+        || generatedPath.indexOf(";") !== -1
+        || generatedPath.indexOf("$") !== -1) {
         return polkit.Result.NOT_HANDLED;
     }
 
     if (!subject.active) {
+        return polkit.Result.NOT_HANDLED;
+    }
+
+    if (!subject.isInGroup("wheel") && !subject.isInGroup("sumika")) {
         return polkit.Result.NOT_HANDLED;
     }
 

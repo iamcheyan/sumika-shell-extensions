@@ -460,11 +460,30 @@ appearance_status() {
 }
 
 copy_theme() {
-  local source="$1"
+  local source="$1" tmp old
   mkdir -p "$CURRENT_DIR"
-  rm -rf "$CURRENT_THEME_DIR"
-  cp -a "$source" "$CURRENT_THEME_DIR"
-  generate_theme_derivatives "$CURRENT_THEME_DIR"
+  tmp="$(mktemp -d "$CURRENT_DIR/.current.tmp.XXXXXX")"
+  old="$CURRENT_DIR/.current.old.$$"
+  rm -rf "$old"
+
+  if ! cp -a "$source"/. "$tmp"/; then
+    rm -rf "$tmp"
+    return 1
+  fi
+  if ! generate_theme_derivatives "$tmp"; then
+    rm -rf "$tmp"
+    return 1
+  fi
+
+  if [[ -d "$CURRENT_THEME_DIR" ]]; then
+    mv "$CURRENT_THEME_DIR" "$old"
+  fi
+  if ! mv "$tmp" "$CURRENT_THEME_DIR"; then
+    [[ -d "$old" ]] && mv "$old" "$CURRENT_THEME_DIR"
+    rm -rf "$tmp"
+    return 1
+  fi
+  rm -rf "$old"
 }
 
 refresh_running_apps() {

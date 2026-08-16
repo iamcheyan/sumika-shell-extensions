@@ -27,12 +27,7 @@ freerdp_bin() {
 rdp_port() {
   [[ -f "$COMPOSE_FILE" ]] || { printf '%s' "$DEFAULT_RDP_PORT"; return; }
   local port
-  port="$(awk '
-    match($0, /127\.0\.0\.1:([0-9]+):3389\/tcp/, m) {
-      print m[1]
-      exit
-    }
-  ' "$COMPOSE_FILE")"
+  port="$(sed -n 's/.*127\.0\.0\.1:\([0-9][0-9]*\):3389\/tcp.*/\1/p' "$COMPOSE_FILE" | sed -n '1p')"
   [[ -n "$port" ]] && printf '%s' "$port" || printf '%s' "$DEFAULT_RDP_PORT"
 }
 
@@ -70,6 +65,8 @@ main() {
     /microphone
     /clipboard
   )
+  [[ -n "$user" ]] && args+=(/u:"$user")
+  [[ -n "$pass" ]] && args+=(/p:"$pass")
 
   exec "$bin" "${args[@]}"
 }

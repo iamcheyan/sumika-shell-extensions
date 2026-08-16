@@ -1,4 +1,33 @@
 {
   "backend": "fcitx5",
-  "schemas": []
+  "schemas": [
+    {
+      "id": "sbzr",
+      "name": "Chinese",
+      "language": "zh",
+      "variant": "Natural input",
+      "badge": "中"
+    },
+    {
+      "id": "sbzr_mix",
+      "name": "Chinese",
+      "language": "zh",
+      "variant": "Mixed input",
+      "badge": "混"
+    },
+    {
+      "id": "easy_en",
+      "name": "English",
+      "language": "en",
+      "variant": "Easy English",
+      "badge": "A"
+    },
+    {
+      "id": "jaroomaji",
+      "name": "Japanese",
+      "language": "ja",
+      "variant": "Romaji",
+      "badge": "あ"
+    }
+  ]
 }

@@ -4,6 +4,7 @@ import qs.modules.common.widgets
 import QtQuick
 import Quickshell
 import Quickshell.Wayland
+import Quickshell.Hyprland
 
 /**
  * Context menu for the active-window title in the bar.
@@ -38,8 +39,8 @@ ContextMenuWindow {
     /// "address:0x…" selector for hyprctl dispatch — targets the clicked
     /// window regardless of which window is focused now.
     readonly property string targetAddress: {
-        const addr = root.targetToplevel?.address ?? "";
-        return addr ? "address:" + addr : "";
+        const addr = root.targetToplevel?.HyprlandToplevel?.address ?? "";
+        return addr ? "address:0x" + addr : "";
     }
 
     /// comm-name candidate derived from the appId (org.kde.ark → ark).
