@@ -47,6 +47,17 @@ ContextMenuWindow {
         }
     }
 
+    ContextMenuItem {
+        nerdIcon: NerdIconMap.settings
+        labelText: "Screenshot Settings"
+        onClicked: {
+            // Opens hypr/screenshot.lua in a terminal editor; the script
+            // reloads Hyprland after the editor exits so new binds apply.
+            Quickshell.execDetached(["sumika-edit-screenshot-binds"]);
+            root.close();
+        }
+    }
+
     ContextMenuSeparator {}
 
     ContextMenuItem {

@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Open the dedicated screenshot keybinding file for editing, then apply it.
+# The bar's execDetached has no TTY, so the editor must run inside a real
+# terminal via sumika-launch-tui (same pattern as sumika-edit-sasayaki-config).
+
+# Locate the OMD repo: session env first, then the runtime quickshell symlink
+# (~/.config/quickshell → <repo>/quickshell) so the script also works from a
+# plain terminal where SUMIKA_SHELL_ROOT is not exported.
+repo_root="${SUMIKA_SHELL_ROOT:-}"
+if [[ -z "$repo_root" || ! -f "$repo_root/hypr/screenshot.lua" ]]; then
+  link="${XDG_CONFIG_HOME:-$HOME/.config}/quickshell"
+  if target="$(readlink -f "$link" 2>/dev/null)"; then
+    repo_root="$(dirname "$target")"
+  fi
+fi
+binds_file="$repo_root/hypr/screenshot.lua"
+if [[ ! -f "$binds_file" ]]; then
+  printf 'sumika-edit-screenshot-binds: hypr/screenshot.lua not found (set SUMIKA_SHELL_ROOT)\n' >&2
+  exit 1
+fi
+
+# Resolve the editor: skip placeholder values (CI/lab images set EDITOR=true),
+# then fall back through the usual TUI editors.
+editor=""
+for cand in "${VISUAL:-}" "${EDITOR:-}" nvim vim vi nano; do
+  [[ -z "$cand" ]] && continue
+  case "$cand" in
+    true|false|:|/bin/true|/usr/bin/true) continue ;;
+  esac
+  if command -v "${cand%% *}" >/dev/null 2>&1; then
+    editor="$cand"
+    break
+  fi
+done
+[[ -z "$editor" ]] && editor="vi"
+
+# xdg-terminal-exec returns as soon as the terminal is spawned, so the reload
+# must run inside the terminal session, after the editor exits — otherwise it
+# would fire before the user has changed anything.
+edit_and_apply="printf -v cmd '%q ' $editor \"\$1\"; \$cmd; hyprctl reload >/dev/null 2>&1"
+
+launcher="$(command -v sumika-launch-tui || true)"
+if [[ -z "$launcher" && -n "${SUMIKA_SHELL_ROOT:-}" && -x "${SUMIKA_SHELL_ROOT}/bin/sumika-launch-tui" ]]; then
+  launcher="${SUMIKA_SHELL_ROOT}/bin/sumika-launch-tui"
+fi
+
+if [[ -n "$launcher" ]]; then
+  exec "$launcher" -a io.github.iamcheyan.sumika.editscreenshotbinds \
+    bash -c "$edit_and_apply" bash "$binds_file"
+fi
+
+# No launcher: run in the current terminal.
+bash -c "$edit_and_apply" bash "$binds_file"
