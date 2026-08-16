@@ -36,7 +36,7 @@ CONNECTED_JSON="$("$LIST_KEYBOARDS" 2>/dev/null || printf '[]')"
 SASAYAKI_CFG="${XDG_CONFIG_HOME:-$HOME/.config}/sasayaki/config.json"
 CAPS_WAKE=false
 if [[ -f "$SASAYAKI_CFG" ]]; then
-    CAPS_WAKE=$(jq -r 'if (.caps_lock_wake // false) then "true" else "false" end' "$SASAYAKI_CFG" 2>/dev/null || echo false)
+    CAPS_WAKE=$(jq -r 'if (.wake_keys.capslock // .caps_lock_wake // false) then "true" else "false" end' "$SASAYAKI_CFG" 2>/dev/null || echo false)
 fi
 
 {
