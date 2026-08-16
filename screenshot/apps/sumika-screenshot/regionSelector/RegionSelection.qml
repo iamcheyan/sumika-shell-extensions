@@ -13,6 +13,7 @@ import Quickshell.Hyprland
 
 PanelWindow {
     id: root
+    readonly property string runtimeDir: Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"
     visible: false
     color: "transparent"
     // Match slurp's layer namespace. This keeps Hyprland's layer-surface
@@ -520,7 +521,7 @@ PanelWindow {
             }
 
             if (root.action === RegionSelection.SnipAction.Edit) {
-                root.tempScreenshotPath = `/tmp/sumika-screenshot-${Date.now()}.png`;
+                root.tempScreenshotPath = `${root.runtimeDir}/sumika-screenshot-${Date.now()}.png`;
                 root.postCaptureReady = false;
                 postCaptureProc.command = ScreenshotAction.getSnapshotCropCommand(
                     root.scaledSnapshotCoord(root.regionX),

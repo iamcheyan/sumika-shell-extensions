@@ -22,6 +22,7 @@ log_file="${SUMIKA_SCREENSHOT_LOG:-/tmp/sumika-screenshot.log}"
 action="${1:-screenshot}"
 lock_file="${XDG_RUNTIME_DIR:-/tmp}/sumika-screenshot.lock"
 fast_pid_file="${XDG_RUNTIME_DIR:-/tmp}/sumika-screenshot-fast.pid"
+active_flag="${XDG_RUNTIME_DIR:-/tmp}/sumika-screenshot-active"
 
 # Hyprland binds can run with a minimal environment.
 if [ -n "${PATH:-}" ]; then
@@ -314,7 +315,7 @@ if is_running; then
     esac
     kill_running
     wait_until_not_running
-    rm -f /tmp/sumika-screenshot-active
+    rm -f "$active_flag"
     unfreeze_bar
     # Explicit cancel request: do not relaunch.
     if [ "$toggle_mode" -eq 1 ] || [ "${1:-}" = "toggle" ]; then
@@ -393,7 +394,7 @@ launch_direct() {
     fi
 
     # Set flag so the bar knows a screenshot session is active.
-    touch /tmp/sumika-screenshot-active
+    touch "$active_flag"
 
     snapshot_dir="/tmp/quickshell/media/screenshot"
     mkdir -p "$snapshot_dir"
@@ -431,12 +432,12 @@ launch_direct() {
         nohup bash -c "
             while kill -0 '$selector_pid' 2>/dev/null; do sleep 0.3; done
             '$_qs' -p '$_bar_app' ipc call action call screenshot.unfreeze '' >/dev/null 2>&1 || true
-            rm -f /tmp/sumika-screenshot-active
+            rm -f '$active_flag'
         " >/dev/null 2>&1 &
     else
         nohup bash -c "
             while kill -0 '$selector_pid' 2>/dev/null; do sleep 0.3; done
-            rm -f /tmp/sumika-screenshot-active
+            rm -f '$active_flag'
         " >/dev/null 2>&1 &
     fi
 }

@@ -12,7 +12,7 @@ Scope {
     function dismiss() {
         GlobalStates.regionSelectorOpen = false
         GlobalStates.screenshotActive = false
-        Quickshell.execDetached(["rm", "-f", "/tmp/sumika-screenshot-active"])
+        Quickshell.execDetached(["rm", "-f", root.activeFlagPath])
     }
 
     property var action: {
@@ -28,6 +28,7 @@ Scope {
     }
     property var selectionMode: RegionSelection.SelectionMode.RectCorners
     readonly property string targetMonitor: Quickshell.env("SUMIKA_SCREENSHOT_MONITOR") ?? ""
+    readonly property string activeFlagPath: `${Quickshell.env("XDG_RUNTIME_DIR") || "/tmp"}/sumika-screenshot-active`
 
     function targetScreens() {
         const screens = Quickshell.screens;
